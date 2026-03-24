@@ -65,6 +65,12 @@ export default function HomeScreen() {
         </ThemedText>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
+        <Link href="/login">
+          <ThemedText type="subtitle">Ir para Login</ThemedText>
+        </Link>
+        <ThemedText>Abra a nova tela de login com animação da planta crescendo.</ThemedText>
+      </ThemedView>
+      <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
         <ThemedText>
           {`When you're ready, run `}

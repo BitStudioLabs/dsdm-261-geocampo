@@ -1,5 +1,4 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -7,13 +6,13 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useColorScheme() ?? 'light';
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
+        tabBarActiveTintColor: Colors[colorScheme].tabIconSelected,
         tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
@@ -26,8 +25,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Explorar',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="chevron.left.forwardslash.chevron.right"
+              color={color}
+            />
+          ),
         }}
       />
     </Tabs>
