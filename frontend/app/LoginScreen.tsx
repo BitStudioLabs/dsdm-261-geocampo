@@ -1,5 +1,6 @@
 import React from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StatusBar, View } from 'react-native';
+import { router } from 'expo-router';
 
 import {
   COLORS,
@@ -15,7 +16,14 @@ import type { LoginScreenProps } from '@/features/login';
 
 export default function LoginScreen({ onLogin, onForgotPassword }: LoginScreenProps) {
   const animation = useLoginEntranceAnimation();
-  const form = useLoginForm(onLogin);
+  const form = useLoginForm(async (email, password) => {
+    if (onLogin) {
+      await onLogin(email, password);
+      return;
+    }
+
+    router.replace('/(tabs)');
+  });
 
   return (
     <View style={styles.root}>
