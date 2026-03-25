@@ -1,40 +1,77 @@
+import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+const THEME = {
+  skyTop: '#0a1f0d',
+  leafLight: '#4dc85a',
+  link: '#7de88a',
+  cardBg: 'rgba(10,31,13,0.95)',
+};
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme() ?? 'light';
-
+export default function TabsLayout() {
   return (
     <Tabs
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: Colors[colorScheme].tabIconSelected,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explorar',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol
-              size={28}
-              name="chevron.left.forwardslash.chevron.right"
-              color={color}
-            />
-          ),
-        }}
-      />
+        tabBarActiveTintColor: THEME.leafLight,
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.45)',
+        tabBarShowLabel: true,
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+        tabBarStyle: {
+          position: 'absolute',
+          left: 16,
+          right: 16,
+          bottom: 16,
+          height: 72,
+          borderTopWidth: 0,
+          borderRadius: 24,
+          paddingTop: 8,
+          paddingBottom: 12,
+          backgroundColor: THEME.cardBg,
+          borderWidth: 1,
+          borderColor: 'rgba(77,200,90,0.2)',
+          elevation: 14,
+          shadowColor: THEME.leafLight,
+          shadowOpacity: 0.15,
+          shadowOffset: { width: 0, height: 8 },
+          shadowRadius: 18,
+        },
+        tabBarItemStyle: {
+          borderRadius: 18,
+          marginHorizontal: 4,
+          paddingVertical: 4,
+        },
+        tabBarIconStyle: {
+          marginBottom: 0,
+        },
+        sceneStyle: {
+          backgroundColor: THEME.skyTop,
+        },
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName: keyof typeof Ionicons.glyphMap = 'home-outline';
+
+          if (route.name === 'index') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'visitas') {
+            iconName = focused ? 'clipboard' : 'clipboard-outline';
+          } else if (route.name === 'relatorios') {
+            iconName = focused ? 'stats-chart' : 'stats-chart-outline';
+          } else if (route.name === 'perfil') {
+            iconName = focused ? 'person' : 'person-outline';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}>
+      <Tabs.Screen name="index" options={{ title: 'Inicio' }} />
+      <Tabs.Screen name="visitas" options={{ title: 'Visitas' }} />
+      <Tabs.Screen name="relatorios" options={{ title: 'Relatorios' }} />
+      <Tabs.Screen name="perfil" options={{ title: 'Perfil' }} />
     </Tabs>
   );
 }
