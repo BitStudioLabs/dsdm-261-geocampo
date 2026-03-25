@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import {
+  Alert,
   Dimensions,
   SafeAreaView,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -21,6 +23,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useAuth } from '@/contexts/AuthContext';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -156,6 +159,22 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
 }));
 
 export default function PerfilScreen() {
+  const { logout } = useAuth();
+
+  const handleLogout = () => {
+    Alert.alert('Sair', 'Deseja realmente sair do aplicativo?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Sair',
+        style: 'destructive',
+        onPress: () => {
+          logout();
+          router.replace('/login');
+        },
+      },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
@@ -163,11 +182,11 @@ export default function PerfilScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <View style={styles.skyBg} />
-          
+
           {STARS.map((star) => (
             <AnimatedStar key={star.id} star={star} />
           ))}
-          
+
           {FIREFLIES.map((firefly) => (
             <Firefly key={firefly.id} {...firefly} />
           ))}
@@ -262,7 +281,7 @@ export default function PerfilScreen() {
           ))}
         </View>
 
-        <TouchableOpacity activeOpacity={0.92} style={styles.logoutButton}>
+        <TouchableOpacity activeOpacity={0.92} style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           <Text style={styles.logoutText}>Sair da conta</Text>
         </TouchableOpacity>

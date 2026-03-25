@@ -2,6 +2,7 @@ export { LoginBackground } from './components/LoginBackground';
 export { LoginFormCard } from './components/LoginFormCard';
 export { LoginHeader } from './components/LoginHeader';
 export { ProfileBadge } from './components/ProfileBadge';
+export { RoleSelector } from './components/RoleSelector';
 export { useLoginEntranceAnimation } from './hooks/useLoginEntranceAnimation';
 export { useLoginForm } from './hooks/useLoginForm';
 export { COLORS } from './constants';

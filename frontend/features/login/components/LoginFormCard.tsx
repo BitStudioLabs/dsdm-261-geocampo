@@ -1,21 +1,44 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import type { AnimatedStyle } from 'react-native-reanimated';
 import Animated from 'react-native-reanimated';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 
 import { COLORS } from '../constants';
 import { styles } from '../styles';
 import type { LoginFormActions, LoginFormState, LoginScreenProps } from '../types';
+import type { UserRole } from '@/contexts/AuthContext';
+import { ROLE_INFO } from '@/contexts/AuthContext';
 
 interface LoginFormCardProps {
-  animatedStyle: AnimatedStyle<any>;
+  animatedStyle: AnimatedStyle<any> | object;
   form: LoginFormState & LoginFormActions;
   onForgotPassword?: LoginScreenProps['onForgotPassword'];
+  selectedRole?: UserRole | null;
+  onBack?: () => void;
 }
 
-export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFormCardProps) {
+export function LoginFormCard({ animatedStyle, form, onForgotPassword, selectedRole, onBack }: LoginFormCardProps) {
+  const roleInfo = selectedRole ? ROLE_INFO[selectedRole] : null;
+
   return (
     <Animated.View style={[styles.card, animatedStyle]}>
+      {onBack && roleInfo && (
+        <View style={localStyles.header}>
+          <TouchableOpacity
+            style={localStyles.backBtn}
+            onPress={onBack}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <FontAwesome6 name="arrow-left" size={18} color={COLORS.leafLight} />
+          </TouchableOpacity>
+          <View style={localStyles.roleIndicator}>
+            <View style={localStyles.roleIconSmall}>
+              <FontAwesome6 name={roleInfo.icon as any} size={14} color={COLORS.leafLight} />
+            </View>
+            <Text style={localStyles.roleText}>{roleInfo.title}</Text>
+          </View>
+        </View>
+      )}
+
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>E-mail</Text>
         <View style={[styles.inputWrapper, form.emailFocused && styles.inputWrapperFocused]}>
@@ -106,3 +129,47 @@ export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFo
     </Animated.View>
   );
 }
+
+const localStyles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(77,200,90,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.25)',
+  },
+  roleIndicator: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(77,200,90,0.12)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.25)',
+  },
+  roleIconSmall: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(77,200,90,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleText: {
+    color: COLORS.leafLight,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});

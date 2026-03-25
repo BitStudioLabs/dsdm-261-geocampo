@@ -59,8 +59,6 @@ export default function TabsLayout() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'visitas') {
             iconName = focused ? 'clipboard' : 'clipboard-outline';
-          } else if (route.name === 'relatorios') {
-            iconName = focused ? 'stats-chart' : 'stats-chart-outline';
           } else if (route.name === 'perfil') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -70,7 +68,7 @@ export default function TabsLayout() {
       })}>
       <Tabs.Screen name="index" options={{ title: 'Inicio' }} />
       <Tabs.Screen name="visitas" options={{ title: 'Visitas' }} />
-      <Tabs.Screen name="relatorios" options={{ title: 'Relatorios' }} />
+      <Tabs.Screen name="relatorios" options={{ href: null }} />
       <Tabs.Screen name="perfil" options={{ title: 'Perfil' }} />
     </Tabs>
   );
