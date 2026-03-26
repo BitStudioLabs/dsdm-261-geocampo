@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { router } from 'expo-router';
-import { KeyboardAvoidingView, Platform, ScrollView, StatusBar, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StatusBar, View } from 'react-native';
 
 import {
   COLORS,
@@ -13,17 +13,36 @@ import {
   useLoginForm,
 } from '@/features/login';
 import type { LoginScreenProps } from '@/features/login';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen({ onLogin, onForgotPassword }: LoginScreenProps) {
   const animation = useLoginEntranceAnimation();
+  const { isAuthenticated, isLoading, login } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated]);
+
   const form = useLoginForm(async (email, password) => {
     if (onLogin) {
       await onLogin(email, password);
       return;
     }
 
+    await login(email, password);
     router.replace('/(tabs)');
   });
+
+  if (isLoading) {
+    return (
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.skyTop} />
+        <ActivityIndicator size="large" color={COLORS.leafLight} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>

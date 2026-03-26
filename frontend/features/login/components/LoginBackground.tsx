@@ -493,8 +493,8 @@ function Firefly({
 
   return (
     <>
-      <Animated.View pointerEvents="none" style={haloStyle} />
-      <Animated.View pointerEvents="none" style={glowStyle} />
+      <Animated.View style={[haloStyle, { pointerEvents: 'none' }]} />
+      <Animated.View style={[glowStyle, { pointerEvents: 'none' }]} />
     </>
   );
 }
@@ -552,7 +552,7 @@ export function LoginBackground({ moonStyle, moonGlowStyle }: LoginBackgroundPro
       <View style={styles.fog} />
       <View style={styles.fogLight} />
 
-      <View style={styles.cornField} pointerEvents="none">
+      <View style={[styles.cornField, { pointerEvents: 'none' }]}>
         {CORN_PLANTS.map((config) => (
           <CornPlant key={config.id} config={config} />
         ))}

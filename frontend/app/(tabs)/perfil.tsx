@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -22,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { colors } from '@/src/theme/colors';
+import { useAuth } from '@/contexts/AuthContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -144,7 +146,7 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
     };
   });
 
-  return <Animated.View pointerEvents="none" style={glowStyle} />;
+  return <Animated.View style={[glowStyle, { pointerEvents: 'none' }]} />;
 }
 
 const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
@@ -156,6 +158,17 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
 }));
 
 export default function PerfilScreen() {
+  const { logout, user } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.replace('/login');
+    } catch (error) {
+      console.error('Erro ao sair da conta:', error);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
@@ -196,7 +209,7 @@ export default function PerfilScreen() {
                 <Ionicons name="person" size={38} color="#fff" />
               </View>
               <View style={styles.heroCopy}>
-                <Text style={styles.name}>Joao Silva</Text>
+                <Text style={styles.name}>{user?.user_metadata?.name ?? user?.email ?? 'Usuario'}</Text>
                 <Text style={styles.role}>Instrutor de Campo</Text>
                 <Text style={styles.region}>Instituto Rural do Sudeste</Text>
               </View>
@@ -216,7 +229,7 @@ export default function PerfilScreen() {
             <View style={styles.contactRow}>
               <View style={styles.contactItem}>
                 <Text style={styles.contactLabel}>E-mail</Text>
-                <Text style={styles.contactValue}>joao.silva@campoapp.com</Text>
+                <Text style={styles.contactValue}>{user?.email ?? 'Sem e-mail cadastrado'}</Text>
               </View>
               <View style={styles.contactItem}>
                 <Text style={styles.contactLabel}>Telefone</Text>
@@ -262,7 +275,7 @@ export default function PerfilScreen() {
           ))}
         </View>
 
-        <TouchableOpacity activeOpacity={0.92} style={styles.logoutButton}>
+        <TouchableOpacity activeOpacity={0.92} style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           <Text style={styles.logoutText}>Sair da conta</Text>
         </TouchableOpacity>

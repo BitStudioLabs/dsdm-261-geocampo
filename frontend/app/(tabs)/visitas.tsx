@@ -148,7 +148,7 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
     };
   });
 
-  return <Animated.View pointerEvents="none" style={glowStyle} />;
+  return <Animated.View style={[glowStyle, { pointerEvents: 'none' }]} />;
 }
 
 const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
