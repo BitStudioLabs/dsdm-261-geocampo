@@ -17,13 +17,13 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen({ onLogin, onForgotPassword }: LoginScreenProps) {
   const animation = useLoginEntranceAnimation();
-  const { isAuthenticated, isLoading, login } = useAuth();
+  const { homeRoute, isAuthenticated, isLoading, login } = useAuth();
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace('/(tabs)');
+    if (isAuthenticated && !isLoading) {
+      router.replace(homeRoute as any);
     }
-  }, [isAuthenticated]);
+  }, [homeRoute, isAuthenticated, isLoading]);
 
   const form = useLoginForm(async (email, password) => {
     if (onLogin) {
@@ -32,7 +32,6 @@ export default function LoginScreen({ onLogin, onForgotPassword }: LoginScreenPr
     }
 
     await login(email, password);
-    router.replace('/(tabs)');
   });
 
   if (isLoading) {
