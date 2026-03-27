@@ -12,16 +12,18 @@ const memoryStorage = {
   removeItem: async () => {},
 };
 
+const storage = isWebClient ? window.localStorage : Platform.OS === 'web' ? memoryStorage : AsyncStorage;
+
 export const supabase = createClient(
   process.env.EXPO_PUBLIC_SUPABASE_URL!,
   process.env.EXPO_PUBLIC_SUPABASE_KEY!,
   {
     auth: {
-      storage: isWebClient ? window.localStorage : isBrowser ? AsyncStorage : memoryStorage,
+      storage: process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_KEY ? storage : memoryStorage,
       autoRefreshToken: true,
-      persistSession: isBrowser,
+      persistSession: true,
       detectSessionInUrl: false,
-      lock: isBrowser ? processLock : undefined,
+      lock: isWebClient ? processLock : undefined,
     },
   }
 );
