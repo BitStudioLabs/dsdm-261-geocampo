@@ -137,9 +137,15 @@ export const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: 70,
+    justifyContent: 'center',
+    paddingTop: 40,
+    paddingBottom: 40,
     paddingHorizontal: 24,
+  },
+  contentStack: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
   },
   logoArea: {
     alignItems: 'center',
@@ -238,7 +244,11 @@ export const styles = StyleSheet.create({
     borderColor: 'rgba(192,57,43,0.3)',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 16,
+  },
+  errorSlot: {
+    minHeight: 16,
+    justifyContent: 'flex-start',
+    marginBottom: 8,
   },
   errorRow: {
     flexDirection: 'row',

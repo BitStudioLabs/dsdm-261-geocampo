@@ -68,14 +68,16 @@ export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFo
         </View>
       </View>
 
-      {!!form.error && (
-        <View style={styles.errorBox}>
-          <View style={styles.errorRow}>
-            <FontAwesome6 name="triangle-exclamation" size={14} color="#ff8a80" />
-            <Text style={styles.errorText}>{form.error}</Text>
+      <View style={styles.errorSlot}>
+        {!!form.error && (
+          <View style={styles.errorBox}>
+            <View style={styles.errorRow}>
+              <FontAwesome6 name="triangle-exclamation" size={14} color="#ff8a80" />
+              <Text style={styles.errorText}>{form.error}</Text>
+            </View>
           </View>
-        </View>
-      )}
+        )}
+      </View>
 
       <TouchableOpacity
         style={[styles.btnLogin, form.loading && styles.btnDisabled]}

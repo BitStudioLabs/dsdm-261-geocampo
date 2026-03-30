@@ -49,15 +49,17 @@ export default function LoginScreen({ onLogin, onForgotPassword }: LoginScreenPr
       <LoginBackground moonStyle={animation.moonStyle} moonGlowStyle={animation.moonGlowStyle} />
       <KeyboardAvoidingView
         style={styles.kvWrapper}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <LoginHeader animatedStyle={animation.logoStyle} />
-          <LoginFormCard animatedStyle={animation.cardStyle} form={form} onForgotPassword={onForgotPassword} />
-          <ProfileBadge animatedStyle={animation.badgeStyle} />
+          <View style={styles.contentStack}>
+            <LoginHeader animatedStyle={animation.logoStyle} />
+            <LoginFormCard animatedStyle={animation.cardStyle} form={form} onForgotPassword={onForgotPassword} />
+            <ProfileBadge animatedStyle={animation.badgeStyle} />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
