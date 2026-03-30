@@ -233,6 +233,10 @@ export default function PropriedadesScreen() {
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterValue>('todos');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
+  const [totalProperties, setTotalProperties] = useState(0);
+  const PAGE_SIZE_OPTIONS = [8, 16, 24];
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [ownerFormOpen, setOwnerFormOpen] = useState(false);
@@ -260,12 +264,29 @@ export default function PropriedadesScreen() {
   );
 
   const loadProperties = async () => {
-    const { data, error } = await supabase
+    const searchValue = query.trim();
+    let queryBuilder = supabase
       .from('propriedades')
       .select(
-        'id, nome, municipio_nome, uf, bairro, referencia, como_chegar, telefone, latitude, longitude, area_total, car, status_propriedade, status_arrendamento, produtores(nome, telefone, email, cpf_cnpj)'
+        'id, nome, municipio_nome, uf, bairro, referencia, como_chegar, telefone, latitude, longitude, area_total, car, status_propriedade, status_arrendamento, produtores(nome, telefone, email, cpf_cnpj)',
+        { count: 'exact' }
       )
       .order('nome', { ascending: true });
+
+    if (filter !== 'todos') {
+      queryBuilder = queryBuilder.eq('status_propriedade', filter);
+    }
+
+    if (searchValue) {
+      const safeValue = searchValue.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      queryBuilder = queryBuilder.or(
+        `nome.ilike.%${safeValue}%,municipio_nome.ilike.%${safeValue}%,bairro.ilike.%${safeValue}%`
+      );
+    }
+
+    queryBuilder = queryBuilder.range((page - 1) * pageSize, page * pageSize - 1);
+
+    const { data, error, count } = await queryBuilder;
 
     if (error) {
       throw error;
@@ -273,11 +294,13 @@ export default function PropriedadesScreen() {
 
     const rows = ((data ?? []) as unknown as RawPropertyRow[]).map(normalizeProperty);
     setProperties(rows);
+    setTotalProperties(count ?? rows.length + (page - 1) * pageSize);
     setSelectedId((current) => current ?? rows.find((item) => item.latitude != null && item.longitude != null)?.id ?? rows[0]?.id ?? null);
   };
 
   useEffect(() => {
     let mounted = true;
+    setIsLoading(true);
 
     loadProperties()
       .catch((error) => {
@@ -301,23 +324,13 @@ export default function PropriedadesScreen() {
         clearTimeout(ownerSearchTimer.current);
       }
     };
-  }, []);
+  }, [filter, query, page, pageSize]);
 
-  const filteredProperties = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+  useEffect(() => {
+    setPage(1);
+  }, [filter, query, pageSize]);
 
-    return properties.filter((property) => {
-      const matchesFilter = filter === 'todos' || property.status_propriedade === filter;
-      const matchesQuery =
-        !normalizedQuery ||
-        (property.nome ?? '').toLowerCase().includes(normalizedQuery) ||
-        (property.municipio_nome ?? '').toLowerCase().includes(normalizedQuery) ||
-        (property.bairro ?? '').toLowerCase().includes(normalizedQuery) ||
-        (property.produtores?.nome ?? '').toLowerCase().includes(normalizedQuery);
-
-      return matchesFilter && matchesQuery;
-    });
-  }, [filter, properties, query]);
+  const filteredProperties = useMemo(() => properties, [properties]);
 
   const mapProperties = useMemo(
     () => filteredProperties.filter((property) => property.latitude != null && property.longitude != null),
@@ -328,6 +341,31 @@ export default function PropriedadesScreen() {
     () => filteredProperties.find((property) => property.id === selectedId) ?? filteredProperties[0] ?? null,
     [filteredProperties, selectedId]
   );
+
+  const totalPages = Math.max(1, Math.ceil(totalProperties / pageSize));
+
+  const pageLinks = useMemo(() => {
+    const pages: Array<number | '...'> = [];
+    for (let i = 1; i <= totalPages; i += 1) {
+      if (
+        totalPages <= 9 ||
+        i <= 2 ||
+        i > totalPages - 2 ||
+        (i >= page - 1 && i <= page + 1)
+      ) {
+        pages.push(i);
+      } else if (pages[pages.length - 1] !== '...') {
+        pages.push('...');
+      }
+    }
+    return pages;
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const initialRegion = useMemo(() => {
     const source =
@@ -855,6 +893,74 @@ export default function PropriedadesScreen() {
         <View style={styles.listSection}>
           <Text style={styles.listTitle}>Lista de propriedades</Text>
 
+          <View style={styles.paginationToolbar}>
+            <Text style={styles.paginationText}>
+              {totalProperties === 0
+                ? 'Nenhuma propriedade para exibir'
+                : `Mostrando ${(page - 1) * pageSize + 1} a ${(page - 1) * pageSize + properties.length} de ${totalProperties}`}
+            </Text>
+            <View style={styles.pageSizeControls}>
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <TouchableOpacity
+                  key={size}
+                  style={[styles.pageSizeButton, pageSize === size && styles.pageSizeButtonActive]}
+                  onPress={() => {
+                    setPageSize(size);
+                  }}
+                  activeOpacity={0.85}>
+                  <Text
+                    style={[
+                      styles.pageSizeText,
+                      pageSize === size && styles.pageSizeTextActive,
+                    ]}>
+                    {size}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.pageNumberRow}>
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === 1 && styles.pageNavButtonDisabled]}
+              onPress={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+              activeOpacity={0.85}>
+              <Text style={[styles.pageNavText, page === 1 && styles.pageNavTextDisabled]}>Anterior</Text>
+            </TouchableOpacity>
+
+            {pageLinks.map((pageNumber, index) =>
+              pageNumber === '...' ? (
+                <Text key={`dots-${index}`} style={styles.pageDots}>...</Text>
+              ) : (
+                <TouchableOpacity
+                  key={pageNumber}
+                  style={[
+                    styles.pageNumberButton,
+                    pageNumber === page && styles.pageNumberButtonActive,
+                  ]}
+                  onPress={() => setPage(pageNumber)}
+                  activeOpacity={0.85}>
+                  <Text
+                    style={[
+                      styles.pageNumberText,
+                      pageNumber === page && styles.pageNumberTextActive,
+                    ]}>
+                    {pageNumber}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
+
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === totalPages && styles.pageNavButtonDisabled]}
+              onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={page === totalPages}
+              activeOpacity={0.85}>
+              <Text style={[styles.pageNavText, page === totalPages && styles.pageNavTextDisabled]}>Próxima</Text>
+            </TouchableOpacity>
+          </View>
+
           {isLoading ? (
             <View style={styles.centerBox}>
               <ActivityIndicator color={THEME.green} />
@@ -1038,6 +1144,55 @@ const styles = StyleSheet.create({
   infoValue: { color: THEME.offWhite, fontSize: 13, lineHeight: 18 },
   listSection: { gap: 12 },
   listTitle: { color: THEME.white, fontSize: 18, fontWeight: '700' },
+  paginationToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 6,
+  },
+  paginationText: { color: THEME.muted, fontSize: 12 },
+  pageSizeControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pageSizeButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  pageSizeButtonActive: { backgroundColor: 'rgba(77,200,90,0.18)', borderColor: THEME.green },
+  pageSizeText: { color: THEME.muted, fontSize: 11, fontWeight: '800' },
+  pageSizeTextActive: { color: THEME.white },
+  pageNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  pageNavButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  pageNavButtonDisabled: { opacity: 0.4 },
+  pageNavText: { color: THEME.white, fontSize: 11, fontWeight: '700' },
+  pageNavTextDisabled: { color: 'rgba(255,255,255,0.5)' },
+  pageNumberButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  pageNumberButtonActive: { backgroundColor: THEME.green, borderColor: THEME.green },
+  pageNumberText: { color: THEME.white, fontSize: 11, fontWeight: '700' },
+  pageNumberTextActive: { color: THEME.bg },
+  pageDots: { color: THEME.muted, fontSize: 11, paddingVertical: 6, paddingHorizontal: 8 },
   centerBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28, gap: 10 },
   centerText: { color: THEME.muted, fontSize: 13 },
   emptyState: {

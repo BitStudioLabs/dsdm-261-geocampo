@@ -89,6 +89,8 @@ export default function UsuariosGestaoScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 8;
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
   useEffect(() => {
@@ -158,6 +160,23 @@ export default function UsuariosGestaoScreen() {
       );
     });
   }, [search, users]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, users]);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredUsers.slice(start, start + PAGE_SIZE);
+  }, [filteredUsers, page]);
 
   const selectedUser = useMemo(
     () => users.find((item) => item.id === selectedUserId) ?? null,
@@ -356,7 +375,33 @@ export default function UsuariosGestaoScreen() {
           </View>
         ) : null}
 
-        {filteredUsers.map((userItem) => {
+        {!isLoading && filteredUsers.length > 0 ? (
+          <View style={styles.paginationRow}>
+            <Text style={styles.paginationText}>
+              Mostrando {(page - 1) * PAGE_SIZE + 1} a {Math.min(page * PAGE_SIZE, filteredUsers.length)} de {filteredUsers.length}
+            </Text>
+            <View style={styles.paginationButtons}>
+              <TouchableOpacity
+                style={[styles.pageButton, page === 1 && styles.pageButtonDisabled]}
+                onPress={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page === 1}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.pageButtonText, page === 1 && styles.pageButtonTextDisabled]}>Anterior</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pageButton, page === totalPages && styles.pageButtonDisabled]}
+                onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page === totalPages}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.pageButtonText, page === totalPages && styles.pageButtonTextDisabled]}>Próxima</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {paginatedUsers.map((userItem) => {
           const expanded = selectedUserId === userItem.id;
           return (
             <View key={userItem.id} style={styles.card}>
@@ -651,6 +696,43 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingHorizontal: 6,
+    gap: 8,
+  },
+  paginationText: {
+    color: THEME.offWhite,
+    fontSize: 12,
+    opacity: 0.9,
+  },
+  paginationButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pageButton: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  pageButtonDisabled: {
+    opacity: 0.4,
+  },
+  pageButtonText: {
+    color: THEME.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageButtonTextDisabled: {
+    color: 'rgba(255,255,255,0.55)',
   },
   propertiesHeader: {
     flexDirection: 'row',
