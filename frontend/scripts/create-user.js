@@ -49,18 +49,21 @@ const nomeCompleto = nameParts.join(' ').trim() || emailArg;
 
 if (!supabaseUrl) {
   console.error('Defina SUPABASE_URL ou EXPO_PUBLIC_SUPABASE_URL no ambiente.');
-  process.exit(1);
+  process.exitCode = 1;
+  return;
 }
 
 if (!serviceRoleKey) {
   console.error('Defina SUPABASE_SERVICE_ROLE_KEY no ambiente para usar a Admin API.');
-  process.exit(1);
+  process.exitCode = 1;
+  return;
 }
 
 if (!emailArg || !passwordArg) {
   console.error('Uso: node scripts/create-user.js <email> <senha> [perfil] [nome completo]');
   console.error('Exemplo: node scripts/create-user.js joao@gmail.com Senha123! instrutor "Joao Silva"');
-  process.exit(1);
+  process.exitCode = 1;
+  return;
 }
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -92,8 +95,37 @@ async function ensureProfileRecord(user) {
   console.log('Registro sincronizado na tabela usuarios.');
 }
 
-async function main() {
-  const { data, error } = await supabase.auth.admin.createUser({
+async function findAuthUserByEmail(email) {
+  let page = 1;
+  const normalizedEmail = email.trim().toLowerCase();
+
+  while (true) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const users = data?.users ?? [];
+    const existingUser = users.find((user) => user.email?.trim().toLowerCase() === normalizedEmail);
+
+    if (existingUser) {
+      return existingUser;
+    }
+
+    if (users.length < 1000) {
+      return null;
+    }
+
+    page += 1;
+  }
+}
+
+async function createOrReuseAuthUser() {
+  const userPayload = {
     email: emailArg,
     password: passwordArg,
     email_confirm: true,
@@ -101,28 +133,68 @@ async function main() {
       nome_completo: nomeCompleto,
       perfil,
     },
+  };
+
+  const { data, error } = await supabase.auth.admin.createUser(userPayload);
+
+  if (!error && data.user) {
+    console.log('Usuario criado no Supabase Auth com sucesso.');
+    return data.user;
+  }
+
+  if (!error) {
+    throw new Error('Usuario nao retornado pela API do Supabase.');
+  }
+
+  const duplicatedEmail =
+    error.message?.includes('already been registered') ||
+    error.code === 'email_exists' ||
+    error.status === 422;
+
+  if (!duplicatedEmail) {
+    throw error;
+  }
+
+  const existingUser = await findAuthUserByEmail(emailArg);
+
+  if (!existingUser) {
+    throw new Error('O Supabase informou e-mail duplicado, mas o usuario nao foi localizado na Admin API.');
+  }
+
+  const { data: updatedData, error: updateError } = await supabase.auth.admin.updateUserById(existingUser.id, {
+    password: passwordArg,
+    email_confirm: true,
+    user_metadata: {
+      ...(existingUser.user_metadata ?? {}),
+      nome_completo: nomeCompleto,
+      perfil,
+    },
   });
 
-  if (error) {
-    console.error(`Erro ao criar usuario: ${error.message}`);
-    process.exit(1);
+  if (updateError) {
+    throw updateError;
   }
 
-  if (!data.user) {
-    console.error('Usuario nao retornado pela API do Supabase.');
-    process.exit(1);
+  if (!updatedData.user) {
+    throw new Error('Usuario existente encontrado, mas a atualizacao nao retornou dados.');
   }
 
-  console.log('Usuario criado no Supabase Auth com sucesso.');
-  console.log(`id: ${data.user.id}`);
-  console.log(`email: ${data.user.email}`);
+  console.log('Usuario ja existia no Supabase Auth e foi reaproveitado.');
+  return updatedData.user;
+}
+
+async function main() {
+  const user = await createOrReuseAuthUser();
+
+  console.log(`id: ${user.id}`);
+  console.log(`email: ${user.email}`);
   console.log(`perfil: ${perfil}`);
 
-  await ensureProfileRecord(data.user);
+  await ensureProfileRecord(user);
 }
 
 main().catch((error) => {
-  console.error('Falha inesperada ao criar usuario.');
-  console.error(error);
-  process.exit(1);
+  const message = error?.message ?? String(error);
+  console.error(`Erro ao criar usuario: ${message}`);
+  process.exitCode = 1;
 });
