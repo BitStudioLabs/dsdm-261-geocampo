@@ -1,8 +1,11 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -90,7 +93,10 @@ export default function UsuariosGestaoScreen() {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 8;
+  const [pageSize, setPageSize] = useState(8);
+  const PAGE_SIZE_OPTIONS = [8, 16, 24];
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
   useEffect(() => {
@@ -105,6 +111,36 @@ export default function UsuariosGestaoScreen() {
     return () => clearTimeout(timeout);
   }, [feedback]);
 
+  useEffect(() => {
+    const loadPageSize = async () => {
+      try {
+        const storedPageSize = await AsyncStorage.getItem('@instrutores_pageSize');
+        if (storedPageSize) {
+          const parsed = parseInt(storedPageSize, 10);
+          if (PAGE_SIZE_OPTIONS.includes(parsed)) {
+            setPageSize(parsed);
+          }
+        }
+      } catch (err) {
+        console.warn('Nao foi possivel ler pageSize de Instrutores', err);
+      }
+    };
+
+    loadPageSize();
+  }, []);
+
+  useEffect(() => {
+    const storePageSize = async () => {
+      try {
+        await AsyncStorage.setItem('@instrutores_pageSize', String(pageSize));
+      } catch (err) {
+        console.warn('Nao foi possivel salvar pageSize de Instrutores', err);
+      }
+    };
+
+    storePageSize();
+  }, [pageSize]);
+
   const loadUsers = async () => {
     const { data, error } = await supabase
       .from('usuarios')
@@ -115,7 +151,9 @@ export default function UsuariosGestaoScreen() {
       throw error;
     }
 
-    setUsers((data ?? []) as UsuarioRow[]);
+    const rows = (data ?? []) as UsuarioRow[];
+    setUsers(rows);
+    setTotalUsers(rows.length);
   };
 
   useEffect(() => {
@@ -161,7 +199,7 @@ export default function UsuariosGestaoScreen() {
     });
   }, [search, users]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
 
   useEffect(() => {
     if (page > totalPages) {
@@ -171,12 +209,38 @@ export default function UsuariosGestaoScreen() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, users]);
+  }, [search, users, pageSize, useInfiniteScroll]);
+
+  const handleScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!useInfiniteScroll || isLoading || page >= totalPages) {
+      return;
+    }
+
+    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 120) {
+      setPage((current) => Math.min(totalPages, current + 1));
+    }
+  };
 
   const paginatedUsers = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filteredUsers.slice(start, start + PAGE_SIZE);
-  }, [filteredUsers, page]);
+    if (useInfiniteScroll) {
+      return filteredUsers.slice(0, page * pageSize);
+    }
+    const start = (page - 1) * pageSize;
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, page, pageSize, useInfiniteScroll]);
+
+  const pageLinks = useMemo(() => {
+    const pages: Array<number | '...'> = [];
+    for (let i = 1; i <= totalPages; i += 1) {
+      if (totalPages <= 7 || i <= 2 || i > totalPages - 2 || (i >= page - 1 && i <= page + 1)) {
+        pages.push(i);
+      } else if (pages[pages.length - 1] !== '...') {
+        pages.push('...');
+      }
+    }
+    return pages;
+  }, [page, totalPages]);
 
   const selectedUser = useMemo(
     () => users.find((item) => item.id === selectedUserId) ?? null,
@@ -336,6 +400,8 @@ export default function UsuariosGestaoScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={200}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.leafLight} />}>
         <Text style={styles.title}>Usuarios</Text>
         <Text style={styles.subtitle}>
@@ -377,27 +443,88 @@ export default function UsuariosGestaoScreen() {
 
         {!isLoading && filteredUsers.length > 0 ? (
           <View style={styles.paginationRow}>
-            <Text style={styles.paginationText}>
-              Mostrando {(page - 1) * PAGE_SIZE + 1} a {Math.min(page * PAGE_SIZE, filteredUsers.length)} de {filteredUsers.length}
-            </Text>
-            <View style={styles.paginationButtons}>
-              <TouchableOpacity
-                style={[styles.pageButton, page === 1 && styles.pageButtonDisabled]}
-                onPress={() => setPage((current) => Math.max(1, current - 1))}
-                disabled={page === 1}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.pageButtonText, page === 1 && styles.pageButtonTextDisabled]}>Anterior</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.pageButton, page === totalPages && styles.pageButtonDisabled]}
-                onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
-                disabled={page === totalPages}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.pageButtonText, page === totalPages && styles.pageButtonTextDisabled]}>Próxima</Text>
-              </TouchableOpacity>
+            <View style={styles.paginationMainInfo}>
+              <Text style={styles.paginationText}>
+                {useInfiniteScroll
+                  ? `Mostrando 1 a ${Math.min(page * pageSize, filteredUsers.length)} de ${filteredUsers.length}`
+                  : `Mostrando ${(page - 1) * pageSize + 1} a ${Math.min(page * pageSize, filteredUsers.length)} de ${filteredUsers.length}`}
+              </Text>
+              <View style={styles.paginationModeControls}>
+                <TouchableOpacity
+                  style={[styles.modeButton, !useInfiniteScroll && styles.modeButtonActive]}
+                  onPress={() => setUseInfiniteScroll(false)}
+                  activeOpacity={0.85}>
+                  <Text style={[styles.modeButtonText, !useInfiniteScroll && styles.modeButtonTextActive]}>Paginacao</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeButton, useInfiniteScroll && styles.modeButtonActive]}
+                  onPress={() => setUseInfiniteScroll(true)}
+                  activeOpacity={0.85}>
+                  <Text style={[styles.modeButtonText, useInfiniteScroll && styles.modeButtonTextActive]}>Scroll infinito</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+            <View style={styles.pageSizeControls}>
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <TouchableOpacity
+                  key={size}
+                  style={[styles.pageSizeButton, pageSize === size && styles.pageSizeButtonActive]}
+                  onPress={() => setPageSize(size)}
+                  activeOpacity={0.85}>
+                  <Text style={[styles.pageSizeText, pageSize === size && styles.pageSizeTextActive]}>{size}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {!isLoading && !useInfiniteScroll && filteredUsers.length > 0 ? (
+          <View style={styles.pageNumberRow}>
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === 1 && styles.pageNavButtonDisabled]}
+              onPress={() => setPage(1)}
+              disabled={page === 1}
+              activeOpacity={0.8}>
+              <Text style={[styles.pageNavText, page === 1 && styles.pageNavTextDisabled]}>1ª</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === 1 && styles.pageNavButtonDisabled]}
+              onPress={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+              activeOpacity={0.8}>
+              <Text style={[styles.pageNavText, page === 1 && styles.pageNavTextDisabled]}>Anterior</Text>
+            </TouchableOpacity>
+
+            {pageLinks.map((pageNumber, index) =>
+              pageNumber === '...' ? (
+                <Text key={`dots-${index}`} style={styles.pageDots}>...</Text>
+              ) : (
+                <TouchableOpacity
+                  key={pageNumber}
+                  style={[styles.pageNumberButton, pageNumber === page && styles.pageNumberButtonActive]}
+                  onPress={() => setPage(pageNumber)}
+                  activeOpacity={0.8}>
+                  <Text style={[styles.pageNumberText, pageNumber === page && styles.pageNumberTextActive]}>{pageNumber}</Text>
+                </TouchableOpacity>
+              )
+            )}
+
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === totalPages && styles.pageNavButtonDisabled]}
+              onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={page === totalPages}
+              activeOpacity={0.8}>
+              <Text style={[styles.pageNavText, page === totalPages && styles.pageNavTextDisabled]}>Próxima</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === totalPages && styles.pageNavButtonDisabled]}
+              onPress={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              activeOpacity={0.8}>
+              <Text style={[styles.pageNavText, page === totalPages && styles.pageNavTextDisabled]}>Última</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -705,6 +832,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     gap: 8,
   },
+  paginationMainInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  paginationModeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  modeButtonActive: {
+    backgroundColor: 'rgba(77,200,90,0.18)',
+    borderColor: THEME.leafLight,
+  },
+  modeButtonText: {
+    color: THEME.offWhite,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modeButtonTextActive: {
+    color: '#fff',
+  },
   paginationText: {
     color: THEME.offWhite,
     fontSize: 12,
@@ -733,6 +889,82 @@ const styles = StyleSheet.create({
   },
   pageButtonTextDisabled: {
     color: 'rgba(255,255,255,0.55)',
+  },
+  pageSizeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pageSizeButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  pageSizeButtonActive: {
+    backgroundColor: 'rgba(77,200,90,0.18)',
+    borderColor: THEME.leafLight,
+  },
+  pageSizeText: {
+    color: THEME.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageSizeTextActive: {
+    color: THEME.white,
+  },
+  pageNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  pageNavButton: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  pageNavButtonDisabled: {
+    opacity: 0.4,
+  },
+  pageNavText: {
+    color: THEME.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageNavTextDisabled: {
+    color: 'rgba(255,255,255,0.55)',
+  },
+  pageNumberButton: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  pageNumberButtonActive: {
+    backgroundColor: 'rgba(77,200,90,0.18)',
+    borderColor: THEME.leafLight,
+  },
+  pageNumberText: {
+    color: THEME.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageNumberTextActive: {
+    color: THEME.white,
+  },
+  pageDots: {
+    color: THEME.offWhite,
+    fontSize: 14,
+    paddingHorizontal: 6,
   },
   propertiesHeader: {
     flexDirection: 'row',

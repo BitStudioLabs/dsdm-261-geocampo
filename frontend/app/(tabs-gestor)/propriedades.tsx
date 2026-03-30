@@ -2,8 +2,11 @@ import { FontAwesome6 } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -237,7 +240,9 @@ export default function PropriedadesScreen() {
   const [pageSize, setPageSize] = useState(8);
   const [totalProperties, setTotalProperties] = useState(0);
   const PAGE_SIZE_OPTIONS = [8, 16, 24];
+  const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [ownerFormOpen, setOwnerFormOpen] = useState(false);
   const [ownerExists, setOwnerExists] = useState<boolean | null>(null);
@@ -262,6 +267,43 @@ export default function PropriedadesScreen() {
       }),
     []
   );
+
+  useEffect(() => {
+    const loadStoredPageSize = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@propriedades_pageSize');
+        if (stored) {
+          const size = parseInt(stored, 10);
+          if (PAGE_SIZE_OPTIONS.includes(size)) {
+            setPageSize(size);
+          }
+        }
+      } catch (error) {
+        console.warn('Nao foi possivel ler pageSize do storage', error);
+      }
+    };
+
+    loadStoredPageSize();
+  }, []);
+
+  useEffect(() => {
+    const storePageSize = async () => {
+      try {
+        await AsyncStorage.setItem('@propriedades_pageSize', String(pageSize));
+      } catch (error) {
+        console.warn('Nao foi possivel armazenar pageSize', error);
+      }
+    };
+
+    storePageSize();
+  }, [pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+    if (useInfiniteScroll) {
+      setProperties([]);
+    }
+  }, [filter, query, pageSize, useInfiniteScroll]);
 
   const loadProperties = async () => {
     const searchValue = query.trim();
@@ -293,21 +335,44 @@ export default function PropriedadesScreen() {
     }
 
     const rows = ((data ?? []) as unknown as RawPropertyRow[]).map(normalizeProperty);
-    setProperties(rows);
-    setTotalProperties(count ?? rows.length + (page - 1) * pageSize);
-    setSelectedId((current) => current ?? rows.find((item) => item.latitude != null && item.longitude != null)?.id ?? rows[0]?.id ?? null);
+
+    if (useInfiniteScroll && page > 1) {
+      setProperties((current) => [...current, ...rows]);
+    } else {
+      setProperties(rows);
+    }
+
+    setTotalProperties(count ?? (useInfiniteScroll ? (page - 1) * pageSize + rows.length : rows.length));
+
+    setSelectedId((current) =>
+      current ?? rows.find((item) => item.latitude != null && item.longitude != null)?.id ?? rows[0]?.id ?? null
+    );
   };
 
   useEffect(() => {
     let mounted = true;
-    setIsLoading(true);
+    const isLoadFirstPage = page === 1;
+
+    if (isLoadFirstPage) {
+      setIsLoading(true);
+    } else if (useInfiniteScroll) {
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+    }
 
     loadProperties()
       .catch((error) => {
         console.error('Erro ao carregar propriedades:', error);
       })
       .finally(() => {
-        if (mounted) {
+        if (!mounted) return;
+
+        if (isLoadFirstPage) {
+          setIsLoading(false);
+        } else if (useInfiniteScroll) {
+          setIsLoadingMore(false);
+        } else {
           setIsLoading(false);
         }
       });
@@ -324,7 +389,7 @@ export default function PropriedadesScreen() {
         clearTimeout(ownerSearchTimer.current);
       }
     };
-  }, [filter, query, page, pageSize]);
+  }, [filter, query, page, pageSize, useInfiniteScroll]);
 
   useEffect(() => {
     setPage(1);
@@ -446,6 +511,19 @@ export default function PropriedadesScreen() {
       clearTimeout(searchTimer.current);
     }
     searchTimer.current = setTimeout(() => setQuery(value), 250);
+  };
+
+  const handleScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!useInfiniteScroll || isLoading || isLoadingMore || page >= totalPages) {
+      return;
+    }
+
+    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+    const isNearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+
+    if (isNearBottom) {
+      setPage((current) => Math.min(totalPages, current + 1));
+    }
   };
 
   const handleOwnerField = (field: keyof OwnerForm, value: string) => {
@@ -656,6 +734,8 @@ export default function PropriedadesScreen() {
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={200}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.green} />}>
         <View style={styles.heroCard}>
           <View style={styles.searchBox}>
@@ -894,11 +974,27 @@ export default function PropriedadesScreen() {
           <Text style={styles.listTitle}>Lista de propriedades</Text>
 
           <View style={styles.paginationToolbar}>
-            <Text style={styles.paginationText}>
-              {totalProperties === 0
-                ? 'Nenhuma propriedade para exibir'
-                : `Mostrando ${(page - 1) * pageSize + 1} a ${(page - 1) * pageSize + properties.length} de ${totalProperties}`}
-            </Text>
+            <View style={styles.paginationMainInfo}>
+              <Text style={styles.paginationText}>
+                {totalProperties === 0
+                  ? 'Nenhuma propriedade para exibir'
+                  : `Mostrando ${(page - 1) * pageSize + 1} a ${(page - 1) * pageSize + properties.length} de ${totalProperties}`}
+              </Text>
+              <View style={styles.paginationModeControls}>
+                <TouchableOpacity
+                  style={[styles.modeButton, !useInfiniteScroll && styles.modeButtonActive]}
+                  onPress={() => setUseInfiniteScroll(false)}
+                  activeOpacity={0.85}>
+                  <Text style={[styles.modeButtonText, !useInfiniteScroll && styles.modeButtonTextActive]}>Paginacao</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeButton, useInfiniteScroll && styles.modeButtonActive]}
+                  onPress={() => setUseInfiniteScroll(true)}
+                  activeOpacity={0.85}>
+                  <Text style={[styles.modeButtonText, useInfiniteScroll && styles.modeButtonTextActive]}>Scroll infinito</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <View style={styles.pageSizeControls}>
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <TouchableOpacity
@@ -921,6 +1017,14 @@ export default function PropriedadesScreen() {
           </View>
 
           <View style={styles.pageNumberRow}>
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === 1 && styles.pageNavButtonDisabled]}
+              onPress={() => setPage(1)}
+              disabled={page === 1}
+              activeOpacity={0.85}>
+              <Text style={[styles.pageNavText, page === 1 && styles.pageNavTextDisabled]}>1ª</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.pageNavButton, page === 1 && styles.pageNavButtonDisabled]}
               onPress={() => setPage((current) => Math.max(1, current - 1))}
@@ -958,6 +1062,14 @@ export default function PropriedadesScreen() {
               disabled={page === totalPages}
               activeOpacity={0.85}>
               <Text style={[styles.pageNavText, page === totalPages && styles.pageNavTextDisabled]}>Próxima</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.pageNavButton, page === totalPages && styles.pageNavButtonDisabled]}
+              onPress={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              activeOpacity={0.85}>
+              <Text style={[styles.pageNavText, page === totalPages && styles.pageNavTextDisabled]}>Última</Text>
             </TouchableOpacity>
           </View>
 
@@ -1150,6 +1262,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     marginBottom: 6,
+  },
+  paginationMainInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  paginationModeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  modeButtonActive: {
+    backgroundColor: 'rgba(77,200,90,0.18)',
+    borderColor: THEME.green,
+  },
+  modeButtonText: {
+    color: THEME.muted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modeButtonTextActive: {
+    color: THEME.white,
   },
   paginationText: { color: THEME.muted, fontSize: 12 },
   pageSizeControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
