@@ -302,6 +302,16 @@ export default function GestorDashboardScreen() {
               <Text style={styles.actionText}>Nova Propriedade</Text>
             </TouchableOpacity>
           </View>
+          <View style={[styles.actionsRow, { marginTop: 12 }]}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs-gestor)/propriedades' as any)}>
+              <View style={[styles.actionIcon, { backgroundColor: 'rgba(77,200,90,0.18)' }]}>
+                <FontAwesome6 name="map-location-dot" size={18} color={THEME.leafLight} />
+              </View>
+              <Text style={styles.actionText}>Mapa de Propriedades</Text>
+            </TouchableOpacity>
+            <View style={styles.actionCardGhost} />
+            <View style={styles.actionCardGhost} />
+          </View>
         </View>
 
         <View style={{ height: 100 }} />
@@ -384,6 +394,7 @@ const styles = StyleSheet.create({
   quickActions: { marginBottom: 20 },
   actionsRow: { flexDirection: 'row', gap: 12, marginTop: 14 },
   actionCard: { flex: 1, backgroundColor: THEME.cardBg, borderRadius: 16, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(77,200,90,0.12)' },
+  actionCardGhost: { flex: 1, opacity: 0 },
   actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   actionText: { fontSize: 11, fontWeight: '600', color: THEME.offWhite, textAlign: 'center' },
 });

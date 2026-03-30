@@ -88,6 +88,12 @@ export default function GestorTabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="propriedades"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
