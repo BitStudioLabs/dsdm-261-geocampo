@@ -1,4 +1,5 @@
 import { FontAwesome6 } from '@expo/vector-icons';
+import { useEffect, useMemo, useRef } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
@@ -48,6 +49,56 @@ export default function PropertyMap({
   theme,
   styles,
 }: Props) {
+  const mapRef = useRef<MapView | null>(null);
+
+  const coordinates = useMemo(
+    () =>
+      properties
+        .filter((property) => property.latitude != null && property.longitude != null)
+        .map((property) => ({
+          latitude: property.latitude as number,
+          longitude: property.longitude as number,
+        })),
+    [properties]
+  );
+
+  const fitMapToProperties = () => {
+    if (!mapRef.current || coordinates.length === 0) {
+      return;
+    }
+
+    if (coordinates.length === 1) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: coordinates[0].latitude,
+          longitude: coordinates[0].longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        },
+        400
+      );
+      return;
+    }
+
+    mapRef.current.fitToCoordinates(coordinates, {
+      edgePadding: {
+        top: 48,
+        right: 48,
+        bottom: 48,
+        left: 48,
+      },
+      animated: true,
+    });
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitMapToProperties();
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [coordinates]);
+
   if (!initialRegion) {
     return (
       <View style={[styles.mapFrame, styles.map, { alignItems: 'center', justifyContent: 'center' }]}>
@@ -58,7 +109,7 @@ export default function PropertyMap({
 
   return (
     <View style={styles.mapFrame}>
-      <MapView ref={undefined} style={styles.map} initialRegion={initialRegion}>
+      <MapView ref={mapRef} style={styles.map} initialRegion={initialRegion} onMapReady={fitMapToProperties}>
         {properties.map((property) => (
           <Marker
             key={property.id}
@@ -70,8 +121,8 @@ export default function PropertyMap({
           />
         ))}
       </MapView>
-      {selectedProperty?.latitude != null && selectedProperty.longitude != null ? (
-        <TouchableOpacity style={styles.centerButton} onPress={() => onSelectProperty(selectedProperty)} activeOpacity={0.85}>
+      {coordinates.length > 0 ? (
+        <TouchableOpacity style={styles.centerButton} onPress={fitMapToProperties} activeOpacity={0.85}>
           <FontAwesome6 name="crosshairs" size={13} color={theme.green} />
         </TouchableOpacity>
       ) : null}
