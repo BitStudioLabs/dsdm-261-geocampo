@@ -1,7 +1,7 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
@@ -92,6 +92,8 @@ const STATUS_META: Record<Exclude<FilterValue, 'todos'>, { label: string; color:
   em_analise: { label: 'Em analise', color: THEME.amber, bg: 'rgba(245,158,11,0.16)' },
   inativo: { label: 'Inativa', color: THEME.red, bg: 'rgba(255,107,107,0.16)' },
 };
+
+const PAGE_SIZE_OPTIONS = [8, 16, 24];
 
 function getStatusMeta(status: PropertyStatus) {
   return STATUS_META[status ?? 'ativo'] ?? STATUS_META.ativo;
@@ -232,6 +234,7 @@ export default function PropriedadesScreen() {
   const ownerSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [properties, setProperties] = useState<PropertyRow[]>([]);
+  const [mapDataset, setMapDataset] = useState<PropertyRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
@@ -239,7 +242,6 @@ export default function PropriedadesScreen() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
   const [totalProperties, setTotalProperties] = useState(0);
-  const PAGE_SIZE_OPTIONS = [8, 16, 24];
   const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -305,7 +307,7 @@ export default function PropriedadesScreen() {
     }
   }, [filter, query, pageSize, useInfiniteScroll]);
 
-  const loadProperties = async () => {
+  const loadProperties = useCallback(async () => {
     const searchValue = query.trim();
     let queryBuilder = supabase
       .from('propriedades')
@@ -347,7 +349,34 @@ export default function PropriedadesScreen() {
     setSelectedId((current) =>
       current ?? rows.find((item) => item.latitude != null && item.longitude != null)?.id ?? rows[0]?.id ?? null
     );
-  };
+  }, [filter, page, pageSize, query, useInfiniteScroll]);
+
+  const loadMapDataset = useCallback(async () => {
+    const searchValue = query.trim();
+    let queryBuilder = supabase
+      .from('propriedades')
+      .select('id, nome, municipio_nome, uf, latitude, longitude, status_propriedade')
+      .order('nome', { ascending: true });
+
+    if (filter !== 'todos') {
+      queryBuilder = queryBuilder.eq('status_propriedade', filter);
+    }
+
+    if (searchValue) {
+      const safeValue = searchValue.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      queryBuilder = queryBuilder.or(
+        `nome.ilike.%${safeValue}%,municipio_nome.ilike.%${safeValue}%,bairro.ilike.%${safeValue}%`
+      );
+    }
+
+    const { data, error } = await queryBuilder;
+
+    if (error) {
+      throw error;
+    }
+
+    setMapDataset(((data ?? []) as unknown as RawPropertyRow[]).map(normalizeProperty));
+  }, [filter, query]);
 
   useEffect(() => {
     let mounted = true;
@@ -361,7 +390,7 @@ export default function PropriedadesScreen() {
       setIsLoading(true);
     }
 
-    loadProperties()
+    Promise.all([loadProperties(), loadMapDataset()])
       .catch((error) => {
         console.error('Erro ao carregar propriedades:', error);
       })
@@ -389,7 +418,7 @@ export default function PropriedadesScreen() {
         clearTimeout(ownerSearchTimer.current);
       }
     };
-  }, [filter, query, page, pageSize, useInfiniteScroll]);
+  }, [filter, loadMapDataset, loadProperties, page, pageSize, query, useInfiniteScroll]);
 
   useEffect(() => {
     setPage(1);
@@ -398,8 +427,8 @@ export default function PropriedadesScreen() {
   const filteredProperties = useMemo(() => properties, [properties]);
 
   const mapProperties = useMemo(
-    () => filteredProperties.filter((property) => property.latitude != null && property.longitude != null),
-    [filteredProperties]
+    () => mapDataset.filter((property) => property.latitude != null && property.longitude != null),
+    [mapDataset]
   );
 
   const selectedProperty = useMemo(
@@ -410,7 +439,7 @@ export default function PropriedadesScreen() {
   const totalPages = Math.max(1, Math.ceil(totalProperties / pageSize));
 
   const pageLinks = useMemo(() => {
-    const pages: Array<number | '...'> = [];
+    const pages: (number | '...')[] = [];
     for (let i = 1; i <= totalPages; i += 1) {
       if (
         totalPages <= 9 ||
@@ -497,7 +526,7 @@ export default function PropriedadesScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadProperties();
+      await Promise.all([loadProperties(), loadMapDataset()]);
     } catch (error) {
       console.error('Erro ao atualizar propriedades:', error);
     } finally {
@@ -793,8 +822,22 @@ export default function PropriedadesScreen() {
                   {[selectedProperty.municipio_nome, selectedProperty.uf].filter(Boolean).join(' - ') || 'Localizacao nao informada'}
                 </Text>
               </View>
-              <View style={[styles.statusBadge, { backgroundColor: selectedStatus.bg }]}>
-                <Text style={[styles.statusText, { color: selectedStatus.color }]}>{selectedStatus.label}</Text>
+              <View style={styles.detailsHeaderActions}>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(tabs-gestor)/cadastro-propriedade',
+                      params: { id: String(selectedProperty.id) },
+                    } as any)
+                  }
+                  activeOpacity={0.85}>
+                  <FontAwesome6 name="pen" size={11} color={THEME.bg} />
+                  <Text style={styles.editButtonText}>Editar</Text>
+                </TouchableOpacity>
+                <View style={[styles.statusBadge, { backgroundColor: selectedStatus.bg }]}>
+                  <Text style={[styles.statusText, { color: selectedStatus.color }]}>{selectedStatus.label}</Text>
+                </View>
               </View>
             </View>
 
@@ -1226,8 +1269,23 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   detailsHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
+  detailsHeaderActions: { alignItems: 'flex-end', gap: 8 },
   detailsTitle: { color: THEME.white, fontSize: 20, fontWeight: '800', marginBottom: 4 },
   detailsSubtitle: { color: THEME.muted, fontSize: 13 },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.gold,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  editButtonText: {
+    color: THEME.bg,
+    fontSize: 11,
+    fontWeight: '800',
+  },
   statusBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   statusText: { fontSize: 11, fontWeight: '800' },
   infoRow: {
