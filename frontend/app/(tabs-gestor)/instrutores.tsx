@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
+  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   RefreshControl,
@@ -39,6 +40,7 @@ type UsuarioRow = {
   perfil: 'admin' | 'instrutor' | 'proprietario';
   telefone: string | null;
   ativo: boolean;
+  foto_url?: string | null;
 };
 
 type PropriedadeVinculada = {
@@ -144,7 +146,7 @@ export default function UsuariosGestaoScreen() {
   const loadUsers = async () => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome_completo, email, perfil, telefone, ativo')
+      .select('id, nome_completo, email, perfil, telefone, ativo, foto_url')
       .order('nome_completo', { ascending: true });
 
     if (error) {
@@ -534,7 +536,15 @@ export default function UsuariosGestaoScreen() {
             <View key={userItem.id} style={styles.card}>
               <TouchableOpacity style={styles.cardHeader} activeOpacity={0.9} onPress={() => handleToggleUser(userItem)}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{getInitials(userItem.nome_completo, userItem.email)}</Text>
+                  {userItem.foto_url ? (
+                    <Image
+                      source={{ uri: userItem.foto_url }}
+                      style={styles.avatarImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Text style={styles.avatarText}>{getInitials(userItem.nome_completo, userItem.email)}</Text>
+                  )}
                 </View>
 
                 <View style={styles.cardCopy}>
@@ -743,6 +753,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(77,200,90,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
   },
   avatarText: { color: THEME.leafLight, fontWeight: '800' },
   cardCopy: { flex: 1 },
