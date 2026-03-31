@@ -937,6 +937,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     marginTop: 10,
+    marginBottom: 10,
+    flexWrap: 'wrap',
   },
   pageNavButton: {
     backgroundColor: 'rgba(255,255,255,0.08)',
