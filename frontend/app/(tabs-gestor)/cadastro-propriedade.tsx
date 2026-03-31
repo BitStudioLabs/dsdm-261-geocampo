@@ -1,7 +1,7 @@
 
 import { FontAwesome6 } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -69,6 +69,53 @@ interface OwnerForm {
   nome: string; email: string; telefone: string; cpfCnpj: string; senha: string;
 }
 
+interface LoadedPropertyRow {
+  id: number;
+  nome: string | null;
+  imovel: string | null;
+  car: string | null;
+  inscricao_incra: string | null;
+  dap: string | null;
+  id_municipio: number | null;
+  municipio_nome: string | null;
+  uf: string | null;
+  id_regional: number | null;
+  bairro: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  cep: string | null;
+  referencia: string | null;
+  como_chegar: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  area_total: number | null;
+  area_atividades_prod: number | null;
+  area_pecuaria: number | null;
+  area_preservacao_perm: number | null;
+  area_reserva_legal: number | null;
+  area_vegetacao_nativa: number | null;
+  area_acudes_represas: number | null;
+  area_benfeitorias: number | null;
+  area_estradas: number | null;
+  area_graos_cereais: number | null;
+  area_nao_agricola: number | null;
+  valor_terra_nua: number | null;
+  status_propriedade: StatusProp;
+  status_arrendamento: StatusArr;
+  telefone: string | null;
+  id_produtor: number | null;
+  produtores:
+    | {
+        nome: string | null;
+        telefone: string | null;
+        email: string | null;
+        cpf_cnpj: string | null;
+        usuario_id: string | null;
+      }
+    | null;
+}
+
 const PROP0: PropForm = {
   nome: '', imovel: '', car: '', inscricaoIncra: '', dap: '',
   municipio: null, regiao: null, uf: 'TO',
@@ -90,6 +137,16 @@ function parseNum(v: string) {
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : NaN;
+}
+
+function formatOptionalNumber(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return '';
+  return String(value).replace('.', ',');
+}
+
+function formatCoordinateValue(value: number | null | undefined, type: 'lat' | 'lon') {
+  if (value == null || Number.isNaN(value)) return '';
+  return formatCoordinateInput(String(value).replace('.', ','), type);
 }
 
 function formatCoordinateInput(value: string, type: 'lat' | 'lon') {
@@ -403,6 +460,9 @@ function RegiaoSelect({ value, onChange }: { value: Regiao | null; onChange: (r:
 
 // ─── Tela principal ───────────────────────────────────────────────────────────
 export default function CadastroPropriedadeScreen() {
+  const params = useLocalSearchParams<{ id?: string }>();
+  const editingPropertyId = params.id ? Number(params.id) : null;
+  const isEditMode = Number.isInteger(editingPropertyId) && editingPropertyId! > 0;
   const bottomTabBarHeight      = useBottomTabBarHeight();
   const insets                  = useSafeAreaInsets();
   const footerSpacing           = bottomTabBarHeight + insets.bottom + 56;
@@ -412,6 +472,7 @@ export default function CadastroPropriedadeScreen() {
   const [locating, setLocating] = useState(false);
   const [areasOpen, setAreasOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(isEditMode);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
   const [errors, setErrors]     = useState<Partial<Record<string, string>>>({});
   const [ownerExists, setOwnerExists] = useState<boolean | null>(null);
@@ -474,6 +535,122 @@ export default function CadastroPropriedadeScreen() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isEditMode || !editingPropertyId) {
+      setLoadingExisting(false);
+      return;
+    }
+
+    let mounted = true;
+
+    const loadExistingProperty = async () => {
+      setLoadingExisting(true);
+      try {
+        const { data: property, error: propertyError } = await supabase
+          .from('propriedades')
+          .select(`
+            id, nome, imovel, car, inscricao_incra, dap, id_municipio, municipio_nome, uf, id_regional,
+            bairro, logradouro, numero, complemento, cep, referencia, como_chegar, latitude, longitude,
+            area_total, area_atividades_prod, area_pecuaria, area_preservacao_perm, area_reserva_legal,
+            area_vegetacao_nativa, area_acudes_represas, area_benfeitorias, area_estradas, area_graos_cereais,
+            area_nao_agricola, valor_terra_nua, status_propriedade, status_arrendamento, telefone, id_produtor,
+            produtores(nome, telefone, email, cpf_cnpj, usuario_id)
+          `)
+          .eq('id', editingPropertyId)
+          .single();
+
+        if (propertyError) {
+          throw propertyError;
+        }
+
+        const loadedProperty = property as unknown as LoadedPropertyRow;
+        const [municipioResult, regiaoResult] = await Promise.all([
+          loadedProperty.id_municipio
+            ? supabase.from('municipios').select('id, nome, uf').eq('id', loadedProperty.id_municipio).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+          loadedProperty.id_regional
+            ? supabase.from('regioes').select('id, nome, uf').eq('id', loadedProperty.id_regional).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+        if (municipioResult.error) {
+          throw municipioResult.error;
+        }
+        if (regiaoResult.error) {
+          throw regiaoResult.error;
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        setPf({
+          nome: loadedProperty.nome ?? '',
+          imovel: loadedProperty.imovel ?? '',
+          car: loadedProperty.car ?? '',
+          inscricaoIncra: loadedProperty.inscricao_incra ?? '',
+          dap: loadedProperty.dap ?? '',
+          municipio: (municipioResult.data as Municipio | null) ?? null,
+          regiao: (regiaoResult.data as Regiao | null) ?? null,
+          uf: loadedProperty.uf ?? 'TO',
+          bairro: loadedProperty.bairro ?? '',
+          logradouro: loadedProperty.logradouro ?? '',
+          numero: loadedProperty.numero ?? '',
+          complemento: loadedProperty.complemento ?? '',
+          cep: loadedProperty.cep ?? '',
+          referencia: loadedProperty.referencia ?? '',
+          comoChegar: loadedProperty.como_chegar ?? '',
+          latitude: formatCoordinateValue(loadedProperty.latitude, 'lat'),
+          longitude: formatCoordinateValue(loadedProperty.longitude, 'lon'),
+          areaTotal: formatOptionalNumber(loadedProperty.area_total),
+          areaAtividades: formatOptionalNumber(loadedProperty.area_atividades_prod),
+          areaPecuaria: formatOptionalNumber(loadedProperty.area_pecuaria),
+          areaPreservacao: formatOptionalNumber(loadedProperty.area_preservacao_perm),
+          areaReserva: formatOptionalNumber(loadedProperty.area_reserva_legal),
+          areaVegetacao: formatOptionalNumber(loadedProperty.area_vegetacao_nativa),
+          areaAcudes: formatOptionalNumber(loadedProperty.area_acudes_represas),
+          areaBenfeitorias: formatOptionalNumber(loadedProperty.area_benfeitorias),
+          areaEstradas: formatOptionalNumber(loadedProperty.area_estradas),
+          areaGraos: formatOptionalNumber(loadedProperty.area_graos_cereais),
+          areaNaoAgricola: formatOptionalNumber(loadedProperty.area_nao_agricola),
+          valorTerraNua: formatOptionalNumber(loadedProperty.valor_terra_nua),
+          statusProp: loadedProperty.status_propriedade ?? 'ativo',
+          statusArr: loadedProperty.status_arrendamento ?? 'nao_arrendada',
+          telefone: loadedProperty.telefone ?? '',
+        });
+
+        setOf({
+          nome: loadedProperty.produtores?.nome ?? '',
+          email: loadedProperty.produtores?.email ?? '',
+          telefone: loadedProperty.produtores?.telefone ?? '',
+          cpfCnpj: loadedProperty.produtores?.cpf_cnpj ?? '',
+          senha: '',
+        });
+
+        setOwnerSearch(
+          loadedProperty.produtores?.email
+            ? `${loadedProperty.produtores?.nome ?? ''} - ${loadedProperty.produtores.email}`
+            : ''
+        );
+        setOwnerExists(!!loadedProperty.produtores?.usuario_id || !!loadedProperty.produtores?.email);
+      } catch (error: any) {
+        if (mounted) {
+          setFeedback({ type: 'err', msg: error?.message ?? 'Nao foi possivel carregar a propriedade para edicao.' });
+        }
+      } finally {
+        if (mounted) {
+          setLoadingExisting(false);
+        }
+      }
+    };
+
+    loadExistingProperty();
+
+    return () => {
+      mounted = false;
+    };
+  }, [editingPropertyId, isEditMode]);
 
   useEffect(() => {
     if (step !== 2) return;
@@ -641,9 +818,9 @@ export default function CadastroPropriedadeScreen() {
         prodId = newProd.id;
       }
 
-      // 2. Insere propriedade
+      // 2. Salva propriedade
       const numAreas = (field: string) => parseNum(field) ?? null;
-      const { error: propErr } = await supabase.from('propriedades').insert({
+      const propertyPayload = {
         nome:                  pf.nome.trim(),
         imovel:                pf.imovel.trim()        || null,
         car:                   pf.car.trim()            || null,
@@ -679,14 +856,24 @@ export default function CadastroPropriedadeScreen() {
         telefone:              pf.telefone.trim() || null,
         id_produtor:           prodId,
         atualizado_em:         new Date().toISOString(),
-      });
+      };
+
+      const propQuery = isEditMode && editingPropertyId
+        ? supabase.from('propriedades').update(propertyPayload).eq('id', editingPropertyId)
+        : supabase.from('propriedades').insert(propertyPayload);
+
+      const { error: propErr } = await propQuery;
 
       if (propErr) throw propErr;
 
-      setPf(PROP0); setOf(OWNER0); setStep(0); setOwnerExists(null);
-      setFeedback({ type: 'ok', msg: 'Propriedade cadastrada com sucesso!' });
+      if (isEditMode) {
+        setFeedback({ type: 'ok', msg: 'Propriedade atualizada com sucesso!' });
+      } else {
+        setPf(PROP0); setOf(OWNER0); setStep(0); setOwnerExists(null);
+        setFeedback({ type: 'ok', msg: 'Propriedade cadastrada com sucesso!' });
+      }
     } catch (e: any) {
-      setFeedback({ type: 'err', msg: e?.message ?? 'Erro ao cadastrar. Tente novamente.' });
+      setFeedback({ type: 'err', msg: e?.message ?? `Erro ao ${isEditMode ? 'atualizar' : 'cadastrar'}. Tente novamente.` });
     } finally {
       setSubmitting(false);
     }
@@ -712,10 +899,17 @@ export default function CadastroPropriedadeScreen() {
               <FontAwesome6 name="arrow-left" size={14} color={T.white} />
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text style={rs.title}>Nova Propriedade</Text>
-              <Text style={rs.sub}>Preencha as etapas abaixo</Text>
+              <Text style={rs.title}>{isEditMode ? 'Editar Propriedade' : 'Nova Propriedade'}</Text>
+              <Text style={rs.sub}>{isEditMode ? 'Atualize os dados da propriedade' : 'Preencha as etapas abaixo'}</Text>
             </View>
           </View>
+
+          {loadingExisting ? (
+            <View style={rs.loadingCard}>
+              <ActivityIndicator color={T.green} />
+              <Text style={rs.loadingCardText}>Carregando dados da propriedade...</Text>
+            </View>
+          ) : null}
 
           <Stepper current={step} />
 
@@ -1010,7 +1204,7 @@ export default function CadastroPropriedadeScreen() {
                   ? <ActivityIndicator color={T.bg} size="small" />
                   : <>
                       <FontAwesome6 name="floppy-disk" size={13} color={T.bg} />
-                      <Text style={rs.btnPrimaryText}>Cadastrar</Text>
+                      <Text style={rs.btnPrimaryText}>{isEditMode ? 'Salvar alteracoes' : 'Cadastrar'}</Text>
                     </>
                 }
               </TouchableOpacity>
@@ -1031,6 +1225,8 @@ const rs = StyleSheet.create({
   back:    { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   title:   { color: T.white, fontSize: 26, fontWeight: '800', letterSpacing: -0.3 },
   sub:     { color: T.muted, fontSize: 13, marginTop: 2 },
+  loadingCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: T.card, borderWidth: 1, borderColor: T.border, borderRadius: 16, padding: 16, marginBottom: 8 },
+  loadingCardText: { color: T.muted, fontSize: 13, fontWeight: '600' },
 
   sections:{ gap: 14 },
   row:     { flexDirection: 'row', gap: 10 },
