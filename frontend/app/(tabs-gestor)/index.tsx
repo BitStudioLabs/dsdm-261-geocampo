@@ -50,6 +50,7 @@ type DashboardStats = {
 type DashboardAlert = {
   id: string;
   type: 'warning' | 'info' | 'error';
+  label: string;
   message: string;
   time: string;
 };
@@ -119,6 +120,12 @@ export default function GestorDashboardScreen() {
               : alert.classificacao === 'suspeita'
                 ? 'warning'
                 : 'info',
+          label:
+            alert.classificacao === 'alto_risco_vpn'
+              ? 'Alto risco'
+              : alert.classificacao === 'suspeita'
+                ? 'Suspeita'
+                : 'Informativo',
           message: `${alert.propriedade_nome ?? 'Propriedade sem nome'} - ${alert.instrutor_nome ?? 'Instrutor não informado'}`,
           time: new Intl.DateTimeFormat('pt-BR', {
             day: '2-digit',
@@ -204,6 +211,7 @@ export default function GestorDashboardScreen() {
   );
   const isWideLayout = width >= 1100;
   const isMediumLayout = width >= 760;
+  const useGroupedStats = width >= 900;
   const statCardWidth = useMemo(() => {
     if (isWideLayout) {
       return (width - 76) / 3;
@@ -215,6 +223,13 @@ export default function GestorDashboardScreen() {
 
     return width - 40;
   }, [isMediumLayout, isWideLayout, width]);
+  const alertCardWidth = useMemo(() => {
+    if (width >= 1180) {
+      return (width - 52) / 2;
+    }
+
+    return width - 40;
+  }, [width]);
 
   return (
     <View style={styles.root}>
@@ -256,8 +271,14 @@ export default function GestorDashboardScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <View style={styles.statsGrid}>
-          <View style={[styles.statCard, styles.statCardLarge, { width: isWideLayout ? statCardWidth * 2 + 12 : '100%' }]}>
+        <View style={[styles.statsGrid, useGroupedStats && styles.statsGridGrouped]}>
+          <View
+            style={[
+              styles.statCard,
+              styles.statCardLarge,
+              useGroupedStats ? styles.statCardMainGrouped : { width: isWideLayout ? statCardWidth * 2 + 12 : '100%' },
+            ]}
+          >
             <View style={styles.statCardHeader}>
               <View style={[styles.statIcon, { backgroundColor: 'rgba(77,200,90,0.2)' }]}>
                 <FontAwesome6 name="calendar-check" size={20} color={THEME.leafLight} />
@@ -270,33 +291,68 @@ export default function GestorDashboardScreen() {
             <Text style={styles.statValue}>{isLoading ? '...' : stats.visitasMes}</Text>
             <Text style={styles.statLabel}>Visitas Este Mes</Text>
           </View>
-          <View style={[styles.statCard, { width: statCardWidth }]}>
-            <View style={styles.statCardHeader}>
-              <View style={[styles.statIcon, { backgroundColor: 'rgba(91,156,255,0.2)' }]}>
-                <FontAwesome6 name="users" size={16} color={THEME.blue} />
+
+          {useGroupedStats ? (
+            <View style={styles.statsCompactColumn}>
+              <View style={[styles.statCard, styles.statCardCompactHalf]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(91,156,255,0.2)' }]}>
+                    <FontAwesome6 name="users" size={16} color={THEME.blue} />
+                  </View>
+                </View>
+                <Text style={styles.statValue}>{isLoading ? '...' : stats.instrutores}</Text>
+                <Text style={styles.statLabel}>Instrutores</Text>
+              </View>
+              <View style={[styles.statCard, styles.statCardCompactHalf]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(245,200,66,0.2)' }]}>
+                    <FontAwesome6 name="house-chimney" size={16} color={THEME.gold} />
+                  </View>
+                </View>
+                <Text style={styles.statValue}>{isLoading ? '...' : stats.propriedades}</Text>
+                <Text style={styles.statLabel}>Propriedades</Text>
+              </View>
+              <View style={[styles.statCard, styles.statCardWide, styles.statCardCompactFull]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(255,107,107,0.2)' }]}>
+                    <FontAwesome6 name="triangle-exclamation" size={16} color={THEME.error} />
+                  </View>
+                </View>
+                <Text style={styles.statValue}>{isLoading ? '...' : stats.alertas}</Text>
+                <Text style={styles.statLabel}>Alertas</Text>
               </View>
             </View>
-            <Text style={styles.statValue}>{isLoading ? '...' : stats.instrutores}</Text>
-            <Text style={styles.statLabel}>Instrutores</Text>
-          </View>
-          <View style={[styles.statCard, { width: statCardWidth }]}>
-            <View style={styles.statCardHeader}>
-              <View style={[styles.statIcon, { backgroundColor: 'rgba(245,200,66,0.2)' }]}>
-                <FontAwesome6 name="house-chimney" size={16} color={THEME.gold} />
+          ) : (
+            <>
+              <View style={[styles.statCard, { width: statCardWidth }]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(91,156,255,0.2)' }]}>
+                    <FontAwesome6 name="users" size={16} color={THEME.blue} />
+                  </View>
+                </View>
+                <Text style={styles.statValue}>{isLoading ? '...' : stats.instrutores}</Text>
+                <Text style={styles.statLabel}>Instrutores</Text>
               </View>
-            </View>
-            <Text style={styles.statValue}>{isLoading ? '...' : stats.propriedades}</Text>
-            <Text style={styles.statLabel}>Propriedades</Text>
-          </View>
-          <View style={[styles.statCard, styles.statCardWide, { width: isWideLayout ? statCardWidth : '100%' }]}>
-            <View style={styles.statCardHeader}>
-              <View style={[styles.statIcon, { backgroundColor: 'rgba(255,107,107,0.2)' }]}>
-                <FontAwesome6 name="triangle-exclamation" size={16} color={THEME.error} />
+              <View style={[styles.statCard, { width: statCardWidth }]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(245,200,66,0.2)' }]}>
+                    <FontAwesome6 name="house-chimney" size={16} color={THEME.gold} />
+                  </View>
+                </View>
+                <Text style={styles.statValue}>{isLoading ? '...' : stats.propriedades}</Text>
+                <Text style={styles.statLabel}>Propriedades</Text>
               </View>
-            </View>
-            <Text style={styles.statValue}>{isLoading ? '...' : stats.alertas}</Text>
-            <Text style={styles.statLabel}>Alertas</Text>
-          </View>
+              <View style={[styles.statCard, styles.statCardWide, { width: isWideLayout ? statCardWidth : '100%' }]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(255,107,107,0.2)' }]}>
+                    <FontAwesome6 name="triangle-exclamation" size={16} color={THEME.error} />
+                  </View>
+                </View>
+                <Text style={styles.statValue}>{isLoading ? '...' : stats.alertas}</Text>
+                <Text style={styles.statLabel}>Alertas</Text>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -314,27 +370,34 @@ export default function GestorDashboardScreen() {
             </View>
           ) : null}
 
-          {alerts.map((alert) => (
-            <TouchableOpacity key={alert.id} style={styles.alertCard}>
-              <View style={[
-                styles.alertIconBox,
-                alert.type === 'error' && { backgroundColor: 'rgba(255,107,107,0.2)' },
-                alert.type === 'warning' && { backgroundColor: 'rgba(245,200,66,0.2)' },
-                alert.type === 'info' && { backgroundColor: 'rgba(91,156,255,0.2)' },
-              ]}>
-                <FontAwesome6
-                  name={alert.type === 'error' ? 'circle-xmark' : alert.type === 'warning' ? 'triangle-exclamation' : 'circle-info'}
-                  size={14}
-                  color={alert.type === 'error' ? THEME.error : alert.type === 'warning' ? THEME.gold : THEME.blue}
-                />
-              </View>
-              <View style={styles.alertInfo}>
+          <View style={styles.alertsGrid}>
+            {alerts.map((alert) => (
+              <TouchableOpacity key={alert.id} style={[styles.alertCard, { width: alertCardWidth }]}>
+                <View style={styles.alertCardTop}>
+                  <View style={styles.alertTopLeft}>
+                    <View style={[
+                      styles.alertIconBox,
+                      alert.type === 'error' && { backgroundColor: 'rgba(255,107,107,0.2)' },
+                      alert.type === 'warning' && { backgroundColor: 'rgba(245,200,66,0.2)' },
+                      alert.type === 'info' && { backgroundColor: 'rgba(91,156,255,0.2)' },
+                    ]}>
+                      <FontAwesome6
+                        name={alert.type === 'error' ? 'circle-xmark' : alert.type === 'warning' ? 'triangle-exclamation' : 'circle-info'}
+                        size={14}
+                        color={alert.type === 'error' ? THEME.error : alert.type === 'warning' ? THEME.gold : THEME.blue}
+                      />
+                    </View>
+                    <View style={styles.alertHeadlineBox}>
+                      <Text style={styles.alertLabel}>{alert.label}</Text>
+                      <Text style={styles.alertTime}>{alert.time}</Text>
+                    </View>
+                  </View>
+                  <FontAwesome6 name="chevron-right" size={12} color={THEME.textMuted} />
+                </View>
                 <Text style={styles.alertMessage}>{alert.message}</Text>
-                <Text style={styles.alertTime}>{alert.time}</Text>
-              </View>
-              <FontAwesome6 name="chevron-right" size={12} color={THEME.textMuted} />
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.quickActions}>
@@ -395,7 +458,7 @@ const styles = StyleSheet.create({
   userName: { fontSize: 26, fontWeight: '700', color: THEME.white, marginBottom: 8 },
   roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(91,156,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
   roleText: { fontSize: 11, color: THEME.blue, fontWeight: '600' },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, marginBottom: 12 },
+  metaRow: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 12 },
   metaPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -407,10 +470,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
+  metaPillCompact: {
+    flexShrink: 0,
+  },
+  metaPillFlexible: {
+    flex: 1,
+    minWidth: 0,
+  },
   metaPillText: {
     fontSize: 12,
     color: THEME.offWhite,
     fontWeight: '600',
+  },
+  metaPillTextFlexible: {
+    flexShrink: 1,
   },
   headerSummary: {
     fontSize: 13,
@@ -421,6 +494,14 @@ const styles = StyleSheet.create({
   notifBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   notifDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.error },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 28, alignItems: 'stretch' },
+  statsGridGrouped: { flexWrap: 'nowrap', alignItems: 'stretch' },
+  statsCompactColumn: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    alignContent: 'flex-start',
+  },
   statCard: {
     minHeight: 160,
     backgroundColor: THEME.cardBg,
@@ -434,6 +515,18 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 172,
     paddingVertical: 20,
+  },
+  statCardMainGrouped: {
+    flex: 1.2,
+    minHeight: 308,
+  },
+  statCardCompactHalf: {
+    width: '48.3%',
+    minHeight: 148,
+  },
+  statCardCompactFull: {
+    width: '100%',
+    minHeight: 148,
   },
   statCardWide: {
     width: '100%',
@@ -468,10 +561,34 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: THEME.white },
   seeAll: { fontSize: 13, color: THEME.link, fontWeight: '600' },
-  alertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.cardBg, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(77,200,90,0.1)', gap: 12 },
+  alertsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  alertCard: {
+    backgroundColor: THEME.cardBg,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.1)',
+    minHeight: 118,
+    justifyContent: 'space-between',
+  },
+  alertCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 14,
+  },
+  alertTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    minWidth: 0,
+  },
   alertIconBox: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  alertInfo: { flex: 1 },
-  alertMessage: { fontSize: 13, fontWeight: '500', color: THEME.offWhite, marginBottom: 4 },
+  alertHeadlineBox: { flex: 1, minWidth: 0 },
+  alertLabel: { fontSize: 13, fontWeight: '700', color: THEME.white, marginBottom: 4 },
+  alertMessage: { fontSize: 13, fontWeight: '500', color: THEME.offWhite, lineHeight: 19 },
   alertTime: { fontSize: 11, color: THEME.textMuted },
   emptyState: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(77,200,90,0.12)', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: 'rgba(77,200,90,0.18)' },
   emptyText: { color: THEME.offWhite, fontSize: 13, flex: 1 },
