@@ -129,6 +129,12 @@ export default function GestorTabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="atribuicoes-tecnico"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

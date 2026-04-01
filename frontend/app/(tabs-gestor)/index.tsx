@@ -119,7 +119,7 @@ export default function GestorDashboardScreen() {
               : alert.classificacao === 'suspeita'
                 ? 'warning'
                 : 'info',
-          message: `${alert.propriedade_nome ?? 'Propriedade sem nome'} - ${alert.instrutor_nome ?? 'Instrutor nao informado'}`,
+          message: `${alert.propriedade_nome ?? 'Propriedade sem nome'} - ${alert.instrutor_nome ?? 'Instrutor não informado'}`,
           time: new Intl.DateTimeFormat('pt-BR', {
             day: '2-digit',
             month: '2-digit',
@@ -338,7 +338,7 @@ export default function GestorDashboardScreen() {
         </View>
 
         <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>Acoes Rapidas</Text>
+          <Text style={styles.sectionTitle}>Ações Rapidas</Text>
           <View style={styles.actionsRow}>
             <TouchableOpacity style={styles.actionCard}>
               <View style={[styles.actionIcon, { backgroundColor: 'rgba(77,200,90,0.2)' }]}>
@@ -360,13 +360,18 @@ export default function GestorDashboardScreen() {
             </TouchableOpacity>
           </View>
           <View style={[styles.actionsRow, { marginTop: 12 }]}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs-gestor)/atribuicoes-tecnico' as any)}>
+              <View style={[styles.actionIcon, { backgroundColor: 'rgba(91,156,255,0.18)' }]}>
+                <FontAwesome6 name="diagram-project" size={18} color={THEME.blue} />
+              </View>
+              <Text style={styles.actionText}>Atribuir Fazendas</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs-gestor)/propriedades' as any)}>
               <View style={[styles.actionIcon, { backgroundColor: 'rgba(77,200,90,0.18)' }]}>
                 <FontAwesome6 name="map-location-dot" size={18} color={THEME.leafLight} />
               </View>
               <Text style={styles.actionText}>Mapa de Propriedades</Text>
             </TouchableOpacity>
-            <View style={styles.actionCardGhost} />
             <View style={styles.actionCardGhost} />
           </View>
         </View>
