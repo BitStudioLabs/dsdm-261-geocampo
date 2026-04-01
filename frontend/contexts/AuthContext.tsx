@@ -41,6 +41,15 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function isInvalidRefreshTokenError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes('invalid refresh token') || message.includes('refresh token not found');
+}
+
 function normalizeProfile(row: any, authUser: User): UserProfile {
   return {
     id: authUser.id,
@@ -78,6 +87,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const clearCorruptedSession = useCallback(async () => {
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (signOutError) {
+      console.error('Erro ao limpar sessão local inválida:', signOutError);
+    } finally {
+      setSession(null);
+      setProfile(null);
+      setIsLoading(false);
+    }
+  }, []);
+
   const refreshProfile = useCallback(async () => {
     const currentUser = session?.user;
 
@@ -111,15 +132,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('Erro ao recuperar sessao:', error.message);
+        if (isInvalidRefreshTokenError(error)) {
+          clearCorruptedSession();
+          return;
+        }
       }
 
       setSession(data.session ?? null);
       setIsLoading(!data.session);
+    }).catch((error) => {
+      console.error('Erro inesperado ao recuperar sessao:', error);
+      if (isMounted && isInvalidRefreshTokenError(error)) {
+        clearCorruptedSession();
+        return;
+      }
+
+      if (isMounted) {
+        setSession(null);
+        setProfile(null);
+        setIsLoading(false);
+      }
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        setSession(nextSession ?? null);
+        setIsLoading(!!nextSession);
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setProfile(null);
+        setIsLoading(false);
+        return;
+      }
+
       setSession(nextSession ?? null);
       setIsLoading(!!nextSession);
     });
@@ -128,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [clearCorruptedSession]);
 
   useEffect(() => {
     if (!session?.user) {
