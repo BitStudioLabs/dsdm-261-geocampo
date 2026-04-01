@@ -636,7 +636,7 @@ export default function CadastroPropriedadeScreen() {
         setOwnerExists(!!loadedProperty.produtores?.usuario_id || !!loadedProperty.produtores?.email);
       } catch (error: any) {
         if (mounted) {
-          setFeedback({ type: 'err', msg: error?.message ?? 'Nao foi possivel carregar a propriedade para edicao.' });
+          setFeedback({ type: 'err', msg: error?.message ?? 'Não foi possivel carregar a propriedade para edição.' });
         }
       } finally {
         if (mounted) {
@@ -1094,7 +1094,7 @@ export default function CadastroPropriedadeScreen() {
                   value={ownerSearch}
                   onChange={setOwnerSearch}
                   placeholder="Busque por nome ou e-mail"
-                  hint="Opcional. Ao selecionar um resultado, os dados abaixo sao preenchidos."
+                  hint="Opcional. Ao selecionar um resultado, os dados abaixo são preenchidos."
                 />
                 {ownerSearchLoading && (
                   <View style={rs.ownerSearchState}>

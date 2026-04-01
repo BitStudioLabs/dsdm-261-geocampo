@@ -100,10 +100,10 @@ function getStatusMeta(status: PropertyStatus) {
 }
 
 function getArrangementLabel(value: string | null) {
-  if (value === 'nao_arrendada') return 'Nao arrendada';
+  if (value === 'nao_arrendada') return 'Não arrendada';
   if (value === 'arrendada') return 'Arrendada';
   if (value === 'parcialmente_arrendada') return 'Arrendamento parcial';
-  return 'Nao informado';
+  return 'Não informado';
 }
 
 function withinBrazilRange(kind: CoordinateKind, value: number) {
@@ -281,7 +281,7 @@ export default function PropriedadesScreen() {
           }
         }
       } catch (error) {
-        console.warn('Nao foi possivel ler pageSize do storage', error);
+        console.warn('Não foi possivel ler pageSize do storage', error);
       }
     };
 
@@ -293,7 +293,7 @@ export default function PropriedadesScreen() {
       try {
         await AsyncStorage.setItem('@propriedades_pageSize', String(pageSize));
       } catch (error) {
-        console.warn('Nao foi possivel armazenar pageSize', error);
+        console.warn('Não foi possivel armazenar pageSize', error);
       }
     };
 
@@ -637,7 +637,7 @@ export default function PropriedadesScreen() {
 
       if (existingUser) {
         if (existingUser.perfil !== 'proprietario') {
-          throw new Error('Ja existe um usuario com esse e-mail, mas ele nao tem perfil de proprietario.');
+          throw new Error('Ja existe um usuario com esse e-mail, mas ele não tem perfil de proprietario.');
         }
 
         ownerUserId = existingUser.id;
@@ -730,7 +730,7 @@ export default function PropriedadesScreen() {
       setOwnerFeedback({ type: 'ok', msg: 'Proprietario vinculado com sucesso a esta propriedade.' });
       setOwnerFormOpen(false);
     } catch (error: any) {
-      setOwnerFeedback({ type: 'err', msg: error?.message ?? 'Nao foi possivel vincular o proprietario.' });
+      setOwnerFeedback({ type: 'err', msg: error?.message ?? 'Não foi possivel vincular o proprietario.' });
     } finally {
       setSavingOwner(false);
     }
@@ -819,7 +819,7 @@ export default function PropriedadesScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.detailsTitle}>{selectedProperty.nome ?? 'Propriedade sem nome'}</Text>
                 <Text style={styles.detailsSubtitle}>
-                  {[selectedProperty.municipio_nome, selectedProperty.uf].filter(Boolean).join(' - ') || 'Localizacao nao informada'}
+                  {[selectedProperty.municipio_nome, selectedProperty.uf].filter(Boolean).join(' - ') || 'Localização não informada'}
                 </Text>
               </View>
               <View style={styles.detailsHeaderActions}>
@@ -841,18 +841,18 @@ export default function PropriedadesScreen() {
               </View>
             </View>
 
-            <InfoRow icon="user" label="Proprietario" value={selectedProperty.produtores?.nome ?? 'Nao informado'} />
+            <InfoRow icon="user" label="Proprietario" value={selectedProperty.produtores?.nome ?? 'Não informado'} />
             <InfoRow
               icon="phone"
               label="Telefone"
-              value={selectedProperty.telefone ?? selectedProperty.produtores?.telefone ?? 'Nao informado'}
+              value={selectedProperty.telefone ?? selectedProperty.produtores?.telefone ?? 'Não informado'}
             />
-            <InfoRow icon="envelope" label="E-mail" value={selectedProperty.produtores?.email ?? 'Nao informado'} />
-            <InfoRow icon="ruler-combined" label="Area total" value={selectedProperty.area_total != null ? `${selectedProperty.area_total} ha` : 'Nao informada'} />
-            <InfoRow icon="leaf" label="CAR" value={selectedProperty.car ?? 'Nao informado'} />
+            <InfoRow icon="envelope" label="E-mail" value={selectedProperty.produtores?.email ?? 'Não informado'} />
+            <InfoRow icon="ruler-combined" label="Area total" value={selectedProperty.area_total != null ? `${selectedProperty.area_total} ha` : 'Não informada'} />
+            <InfoRow icon="leaf" label="CAR" value={selectedProperty.car ?? 'Não informado'} />
             <InfoRow icon="handshake" label="Arrendamento" value={getArrangementLabel(selectedProperty.status_arrendamento)} />
-            <InfoRow icon="flag" label="Referencia" value={selectedProperty.referencia ?? 'Nao informada'} />
-            <InfoRow icon="route" label="Como chegar" value={selectedProperty.como_chegar ?? 'Nao informado'} />
+            <InfoRow icon="flag" label="Referencia" value={selectedProperty.referencia ?? 'Não informada'} />
+            <InfoRow icon="route" label="Como chegar" value={selectedProperty.como_chegar ?? 'Não informado'} />
 
             {!selectedPropertyHasOwner ? (
               <View style={styles.ownerCtaCard}>
@@ -861,7 +861,7 @@ export default function PropriedadesScreen() {
                     <FontAwesome6 name="user-plus" size={12} color={THEME.gold} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.ownerCtaTitle}>Esta propriedade ainda nao tem proprietario rural</Text>
+                    <Text style={styles.ownerCtaTitle}>Esta propriedade ainda não tem proprietario rural</Text>
                     <Text style={styles.ownerCtaText}>
                       Voce pode vincular um proprietario ja cadastrado ou criar um novo login com perfil de proprietario.
                     </Text>
@@ -1028,7 +1028,7 @@ export default function PropriedadesScreen() {
                   style={[styles.modeButton, !useInfiniteScroll && styles.modeButtonActive]}
                   onPress={() => setUseInfiniteScroll(false)}
                   activeOpacity={0.85}>
-                  <Text style={[styles.modeButtonText, !useInfiniteScroll && styles.modeButtonTextActive]}>Paginacao</Text>
+                  <Text style={[styles.modeButtonText, !useInfiniteScroll && styles.modeButtonTextActive]}>Paginação</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modeButton, useInfiniteScroll && styles.modeButtonActive]}
@@ -1150,10 +1150,10 @@ export default function PropriedadesScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.propertyName}>{property.nome ?? 'Propriedade sem nome'}</Text>
                     <Text style={styles.propertyMeta}>
-                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao nao informada'}
+                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localização não informada'}
                     </Text>
                     <Text style={styles.propertyMeta}>
-                      {property.produtores?.nome ? `Proprietario: ${property.produtores.nome}` : 'Proprietario nao informado'}
+                      {property.produtores?.nome ? `Proprietario: ${property.produtores.nome}` : 'Proprietario não informado'}
                     </Text>
                   </View>
 
