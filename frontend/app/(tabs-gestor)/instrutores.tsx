@@ -7,6 +7,7 @@ import {
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -40,7 +42,14 @@ type UsuarioRow = {
   perfil: 'admin' | 'instrutor' | 'proprietario';
   telefone: string | null;
   ativo: boolean;
+  id_regional: number | null;
   foto_url?: string | null;
+};
+
+type RegionalOption = {
+  id: number;
+  nome: string;
+  uf: string;
 };
 
 type PropriedadeVinculada = {
@@ -60,7 +69,9 @@ type FeedbackState = {
 type EditFormState = {
   nomeCompleto: string;
   telefone: string;
+  perfil: UsuarioRow['perfil'];
   ativo: boolean;
+  regionalId: number | null;
 };
 
 const ROLE_LABELS: Record<UsuarioRow['perfil'], string> = {
@@ -68,6 +79,12 @@ const ROLE_LABELS: Record<UsuarioRow['perfil'], string> = {
   instrutor: 'Tecnico de Campo',
   proprietario: 'Proprietario Rural',
 };
+
+const ROLE_EDIT_OPTIONS: { value: UsuarioRow['perfil']; label: string; hint: string }[] = [
+  { value: 'admin', label: 'Gestor Institucional', hint: 'Gerencia usuarios, auditoria e operação.' },
+  { value: 'instrutor', label: 'Tecnico de Campo', hint: 'Realiza visitas e acompanha propriedades.' },
+  { value: 'proprietario', label: 'Proprietario Rural', hint: 'Acessa dados da fazenda e seu cadastro.' },
+];
 
 function getInitials(name: string | null, email: string | null) {
   const source = (name ?? email ?? 'Usuario').trim();
@@ -79,16 +96,34 @@ function getInitials(name: string | null, email: string | null) {
     .join('');
 }
 
+function getRegionalLabel(regionais: RegionalOption[], regionalId: number | null) {
+  if (!regionalId) {
+    return 'Regional não definida';
+  }
+
+  const regional = regionais.find((item) => item.id === regionalId);
+  if (!regional) {
+    return 'Regional não definida';
+  }
+
+  return `${regional.nome} (${regional.uf})`;
+}
+
 export default function UsuariosGestaoScreen() {
+  const { width } = useWindowDimensions();
+  const useTwoColumns = Platform.OS === 'web' && width >= 1080;
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<UsuarioRow[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [linkedProperties, setLinkedProperties] = useState<Record<string, PropriedadeVinculada[]>>({});
+  const [regionais, setRegionais] = useState<RegionalOption[]>([]);
   const [loadingPropertiesFor, setLoadingPropertiesFor] = useState<string | null>(null);
   const [form, setForm] = useState<EditFormState>({
     nomeCompleto: '',
     telefone: '',
+    perfil: 'instrutor',
     ativo: true,
+    regionalId: null,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -114,6 +149,31 @@ export default function UsuariosGestaoScreen() {
   }, [feedback]);
 
   useEffect(() => {
+    let mounted = true;
+
+    const loadRegionais = async () => {
+      const { data, error } = await supabase.from('regioes').select('id, nome, uf').order('nome');
+
+      if (!mounted) {
+        return;
+      }
+
+      if (error) {
+        console.error('Erro ao carregar regionais:', error);
+        return;
+      }
+
+      setRegionais((data ?? []) as RegionalOption[]);
+    };
+
+    loadRegionais();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const loadPageSize = async () => {
       try {
         const storedPageSize = await AsyncStorage.getItem('@instrutores_pageSize');
@@ -124,7 +184,7 @@ export default function UsuariosGestaoScreen() {
           }
         }
       } catch (err) {
-        console.warn('Nao foi possivel ler pageSize de Instrutores', err);
+        console.warn('Não foi possivel ler pageSize de Instrutores', err);
       }
     };
 
@@ -136,7 +196,7 @@ export default function UsuariosGestaoScreen() {
       try {
         await AsyncStorage.setItem('@instrutores_pageSize', String(pageSize));
       } catch (err) {
-        console.warn('Nao foi possivel salvar pageSize de Instrutores', err);
+        console.warn('Não foi possivel salvar pageSize de Instrutores', err);
       }
     };
 
@@ -146,7 +206,7 @@ export default function UsuariosGestaoScreen() {
   const loadUsers = async () => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome_completo, email, perfil, telefone, ativo, foto_url')
+      .select('id, nome_completo, email, perfil, telefone, ativo, id_regional, foto_url')
       .order('nome_completo', { ascending: true });
 
     if (error) {
@@ -257,7 +317,9 @@ export default function UsuariosGestaoScreen() {
     setForm({
       nomeCompleto: selectedUser.nome_completo ?? '',
       telefone: selectedUser.telefone ?? '',
+      perfil: selectedUser.perfil,
       ativo: selectedUser.ativo,
+      regionalId: selectedUser.id_regional ?? null,
     });
 
     if (selectedUser.perfil !== 'instrutor' || linkedProperties[selectedUser.id]) {
@@ -337,6 +399,11 @@ export default function UsuariosGestaoScreen() {
       return;
     }
 
+    if (!form.regionalId) {
+      setFeedback({ type: 'error', message: 'Selecione a regional do usuario.' });
+      return;
+    }
+
     setIsSaving(true);
     setFeedback(null);
 
@@ -345,7 +412,9 @@ export default function UsuariosGestaoScreen() {
       .update({
         nome_completo: form.nomeCompleto.trim(),
         telefone: form.telefone.trim() || null,
+        perfil: form.perfil,
         ativo: form.ativo,
+        id_regional: form.regionalId,
         atualizado_em: new Date().toISOString(),
       })
       .eq('id', selectedUser.id);
@@ -365,7 +434,9 @@ export default function UsuariosGestaoScreen() {
               ...item,
               nome_completo: form.nomeCompleto.trim(),
               telefone: form.telefone.trim() || null,
+              perfil: form.perfil,
               ativo: form.ativo,
+              id_regional: form.regionalId,
             }
           : item
       )
@@ -387,12 +458,12 @@ export default function UsuariosGestaoScreen() {
     setIsResettingPassword(false);
 
     if (error) {
-      console.error('Erro ao enviar redefinicao de senha:', error);
-      setFeedback({ type: 'error', message: 'Não foi possivel enviar o e-mail de redefinicao de senha.' });
+      console.error('Erro ao enviar redefinição de senha:', error);
+      setFeedback({ type: 'error', message: 'Não foi possivel enviar o e-mail de redefinição de senha.' });
       return;
     }
 
-    setFeedback({ type: 'success', message: 'E-mail de redefinicao de senha enviado com sucesso.' });
+    setFeedback({ type: 'success', message: 'E-mail de redefinição de senha enviado com sucesso.' });
   };
 
   const selectedProperties = selectedUser ? linkedProperties[selectedUser.id] ?? [] : [];
@@ -456,7 +527,7 @@ export default function UsuariosGestaoScreen() {
                   style={[styles.modeButton, !useInfiniteScroll && styles.modeButtonActive]}
                   onPress={() => setUseInfiniteScroll(false)}
                   activeOpacity={0.85}>
-                  <Text style={[styles.modeButtonText, !useInfiniteScroll && styles.modeButtonTextActive]}>Paginacao</Text>
+                  <Text style={[styles.modeButtonText, !useInfiniteScroll && styles.modeButtonTextActive]}>Paginação</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modeButton, useInfiniteScroll && styles.modeButtonActive]}
@@ -532,6 +603,7 @@ export default function UsuariosGestaoScreen() {
 
         {paginatedUsers.map((userItem) => {
           const expanded = selectedUserId === userItem.id;
+          const regionalLabel = getRegionalLabel(regionais, userItem.id_regional);
           return (
             <View key={userItem.id} style={styles.card}>
               <TouchableOpacity style={styles.cardHeader} activeOpacity={0.9} onPress={() => handleToggleUser(userItem)}>
@@ -549,10 +621,14 @@ export default function UsuariosGestaoScreen() {
 
                 <View style={styles.cardCopy}>
                   <Text style={styles.cardTitle}>{userItem.nome_completo ?? 'Usuario sem nome'}</Text>
-                  <Text style={styles.cardMeta}>{userItem.email ?? 'E-mail nao informado'}</Text>
+                  <Text style={styles.cardMeta}>{userItem.email ?? 'E-mail não informado'}</Text>
                   <View style={styles.metaRow}>
                     <View style={styles.roleBadge}>
                       <Text style={styles.roleBadgeText}>{ROLE_LABELS[userItem.perfil]}</Text>
+                    </View>
+                    <View style={styles.regionalBadge}>
+                      <FontAwesome6 name="location-dot" size={10} color={THEME.gold} />
+                      <Text style={styles.regionalBadgeText}>{regionalLabel}</Text>
                     </View>
                     <View style={[styles.statusBadge, userItem.ativo ? styles.statusActive : styles.statusInactive]}>
                       <Text style={styles.statusText}>{userItem.ativo ? 'Ativo' : 'Inativo'}</Text>
@@ -568,33 +644,121 @@ export default function UsuariosGestaoScreen() {
               </TouchableOpacity>
 
               {expanded ? (
-                <View style={styles.detailBox}>
+                <View style={[styles.detailBox, useTwoColumns && styles.detailBoxWide]}>
                   <Text style={styles.sectionTitle}>Edição</Text>
 
-                  <Text style={styles.label}>Nome completo</Text>
-                  <TextInput
-                    value={form.nomeCompleto}
-                    onChangeText={(value) => setForm((current) => ({ ...current, nomeCompleto: value }))}
-                    placeholder="Nome completo"
-                    placeholderTextColor={THEME.textMuted}
-                    style={styles.input}
-                  />
+                  <View style={[styles.editSectionCard, useTwoColumns && styles.editSectionCardWide]}>
+                    <View style={styles.editSectionHeader}>
+                      <View style={[styles.editSectionIcon, { backgroundColor: 'rgba(91,156,255,0.16)' }]}>
+                        <FontAwesome6 name="id-card" size={12} color={THEME.blue} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.editSectionTitle}>Dados pessoais</Text>
+                        <Text style={styles.editSectionSubtitle}>Atualize as informacoes principais do usuario.</Text>
+                      </View>
+                    </View>
 
-                  <Text style={styles.label}>Telefone</Text>
-                  <TextInput
-                    value={form.telefone}
-                    onChangeText={(value) => setForm((current) => ({ ...current, telefone: value }))}
-                    placeholder="(63) 99999-9999"
-                    placeholderTextColor={THEME.textMuted}
-                    keyboardType="phone-pad"
-                    style={styles.input}
-                  />
+                    <Text style={styles.label}>Nome completo</Text>
+                    <TextInput
+                      value={form.nomeCompleto}
+                      onChangeText={(value) => setForm((current) => ({ ...current, nomeCompleto: value }))}
+                      placeholder="Nome completo"
+                      placeholderTextColor={THEME.textMuted}
+                      style={styles.input}
+                    />
 
-                  <View style={styles.switchRow}>
+                    <Text style={styles.label}>Telefone</Text>
+                    <TextInput
+                      value={form.telefone}
+                      onChangeText={(value) => setForm((current) => ({ ...current, telefone: value }))}
+                      placeholder="(63) 99999-9999"
+                      placeholderTextColor={THEME.textMuted}
+                      keyboardType="phone-pad"
+                      style={styles.input}
+                    />
+                  </View>
+
+                  <View style={[styles.editSectionCard, useTwoColumns && styles.editSectionCardWide]}>
+                    <View style={styles.editSectionHeader}>
+                      <View style={[styles.editSectionIcon, { backgroundColor: 'rgba(245,200,66,0.16)' }]}>
+                        <FontAwesome6 name="user-shield" size={12} color={THEME.gold} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.editSectionTitle}>Permissoes e regional</Text>
+                        <Text style={styles.editSectionSubtitle}>Defina o papel do usuario e sua unidade principal.</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.label}>Permissão de acesso</Text>
+                    <Text style={styles.helperText}>Perfil atual: {ROLE_LABELS[form.perfil]}</Text>
+                    <View style={styles.permissionGrid}>
+                    {ROLE_EDIT_OPTIONS.map((option) => {
+                      const selected = form.perfil === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[styles.permissionCard, selected && styles.permissionCardActive]}
+                          onPress={() => setForm((current) => ({ ...current, perfil: option.value }))}
+                          activeOpacity={0.85}>
+                          <View style={styles.permissionCardHeader}>
+                            <Text style={[styles.permissionCardTitle, selected && styles.permissionCardTitleActive]}>
+                              {option.label}
+                            </Text>
+                            {selected ? <FontAwesome6 name="circle-check" size={13} color={THEME.leafLight} /> : null}
+                          </View>
+                          <Text style={[styles.permissionCardMeta, selected && styles.permissionCardMetaActive]}>
+                            {option.hint}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    </View>
+
+                    <Text style={styles.label}>Regional</Text>
+                    <Text style={styles.helperText}>Regional atual: {getRegionalLabel(regionais, form.regionalId)}</Text>
+                    <View style={styles.regionalGrid}>
+                    {regionais.map((regional) => {
+                      const selected = form.regionalId === regional.id;
+                      return (
+                        <TouchableOpacity
+                          key={regional.id}
+                          style={[styles.regionalCard, selected && styles.regionalCardActive]}
+                          onPress={() => setForm((current) => ({ ...current, regionalId: regional.id }))}
+                          activeOpacity={0.85}>
+                          <View style={styles.regionalCardHeader}>
+                            <Text style={[styles.regionalCardTitle, selected && styles.regionalCardTitleActive]}>
+                              {regional.nome}
+                            </Text>
+                            {selected ? <FontAwesome6 name="location-dot" size={13} color={THEME.gold} /> : null}
+                          </View>
+                          <Text style={[styles.regionalCardMeta, selected && styles.regionalCardMetaActive]}>
+                            Unidade {regional.uf}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    </View>
+                  </View>
+
+                  <View style={[styles.editSectionCard, useTwoColumns && styles.editSectionCardWide, useTwoColumns && styles.editSectionCardSpanFull]}>
+                    <View style={styles.editSectionHeader}>
+                      <View style={[styles.editSectionIcon, { backgroundColor: 'rgba(77,200,90,0.16)' }]}>
+                        <FontAwesome6 name="power-off" size={12} color={THEME.leafLight} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.editSectionTitle}>Acesso</Text>
+                        <Text style={styles.editSectionSubtitle}>Controle o status do usuario e a recuperação de senha.</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.switchRow}>
                     <View style={styles.switchCopy}>
                       <Text style={styles.switchTitle}>Usuario ativo</Text>
                       <Text style={styles.switchDescription}>
                         Desative o acesso logico do perfil sem perder o historico cadastrado.
+                      </Text>
+                      <Text style={[styles.switchStatus, form.ativo ? styles.switchStatusActive : styles.switchStatusInactive]}>
+                        {form.ativo ? 'Status atual: ativo' : 'Status atual: inativo'}
                       </Text>
                     </View>
                     <Switch
@@ -602,7 +766,17 @@ export default function UsuariosGestaoScreen() {
                       onValueChange={(value) => setForm((current) => ({ ...current, ativo: value }))}
                       thumbColor={form.ativo ? THEME.leafLight : '#d9d9d9'}
                       trackColor={{ false: 'rgba(255,255,255,0.16)', true: 'rgba(77,200,90,0.35)' }}
-                    />
+                      />
+                    </View>
+
+                    {!form.ativo ? (
+                      <View style={styles.inactiveWarning}>
+                        <FontAwesome6 name="triangle-exclamation" size={13} color={THEME.gold} />
+                        <Text style={styles.inactiveWarningText}>
+                          Este usuario esta inativo. Ele permanece cadastrado, mas o acesso ao sistema fica desativado.
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   {feedback ? (
@@ -641,7 +815,7 @@ export default function UsuariosGestaoScreen() {
                     )}
                   </TouchableOpacity>
 
-                  {userItem.perfil === 'instrutor' ? (
+                  {form.perfil === 'instrutor' ? (
                     <View style={styles.propertiesSection}>
                       <View style={styles.propertiesHeader}>
                         <Text style={styles.sectionTitle}>Propriedades vinculadas</Text>
@@ -662,7 +836,7 @@ export default function UsuariosGestaoScreen() {
                           <View style={styles.propertyCopy}>
                             <Text style={styles.propertyName}>{property.nome ?? 'Propriedade sem nome'}</Text>
                             <Text style={styles.propertyMeta}>
-                              {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao nao informada'}
+                              {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localização não informada'}
                             </Text>
                             <Text style={styles.propertyProject}>{property.projeto_nome ?? 'Sem projeto vinculado'}</Text>
                           </View>
@@ -772,6 +946,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(91,156,255,0.16)',
   },
   roleBadgeText: { color: THEME.blue, fontSize: 11, fontWeight: '700' },
+  regionalBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(245,200,66,0.14)',
+  },
+  regionalBadgeText: {
+    color: THEME.offWhite,
+    fontSize: 11,
+    fontWeight: '700',
+  },
   statusBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   statusActive: { backgroundColor: 'rgba(77,200,90,0.18)' },
   statusInactive: { backgroundColor: 'rgba(255,107,107,0.18)' },
@@ -782,8 +970,53 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
-  sectionTitle: { color: THEME.white, fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  detailBoxWide: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+  },
+  sectionTitle: { color: THEME.white, fontSize: 16, fontWeight: '700', marginBottom: 2, width: '100%' },
+  sectionTitleWide: { marginBottom: 4 },
+  editSectionCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    padding: 14,
+    gap: 8,
+  },
+  editSectionCardWide: {
+    width: '48.5%',
+  },
+  editSectionCardSpanFull: {
+    width: '100%',
+  },
+  editSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 2,
+  },
+  editSectionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editSectionTitle: {
+    color: THEME.white,
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  editSectionSubtitle: {
+    color: THEME.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
   label: { color: THEME.offWhite, fontSize: 13, fontWeight: '700', marginTop: 4 },
+  helperText: { color: THEME.textMuted, fontSize: 12, marginTop: 6, marginBottom: 8 },
   input: {
     backgroundColor: THEME.inputBg,
     borderWidth: 1,
@@ -793,6 +1026,83 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: THEME.white,
     fontSize: 14,
+  },
+  permissionGrid: {
+    gap: 10,
+  },
+  permissionCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 5,
+  },
+  permissionCardActive: {
+    backgroundColor: 'rgba(91,156,255,0.14)',
+    borderColor: 'rgba(91,156,255,0.32)',
+  },
+  permissionCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  permissionCardTitle: {
+    color: THEME.white,
+    fontSize: 13,
+    fontWeight: '800',
+    flex: 1,
+  },
+  permissionCardTitleActive: {
+    color: THEME.white,
+  },
+  permissionCardMeta: {
+    color: THEME.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  permissionCardMetaActive: {
+    color: THEME.offWhite,
+  },
+  regionalGrid: {
+    gap: 10,
+  },
+  regionalCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  regionalCardActive: {
+    backgroundColor: 'rgba(77,200,90,0.14)',
+    borderColor: 'rgba(77,200,90,0.3)',
+  },
+  regionalCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  regionalCardTitle: {
+    color: THEME.white,
+    fontSize: 13,
+    fontWeight: '800',
+    flex: 1,
+  },
+  regionalCardTitleActive: {
+    color: THEME.white,
+  },
+  regionalCardMeta: {
+    color: THEME.textMuted,
+    fontSize: 12,
+  },
+  regionalCardMetaActive: {
+    color: THEME.offWhite,
   },
   switchRow: {
     flexDirection: 'row',
@@ -807,6 +1117,26 @@ const styles = StyleSheet.create({
   switchCopy: { flex: 1 },
   switchTitle: { color: THEME.white, fontSize: 14, fontWeight: '700', marginBottom: 4 },
   switchDescription: { color: THEME.textMuted, fontSize: 12, lineHeight: 18 },
+  switchStatus: { marginTop: 8, fontSize: 12, fontWeight: '700' },
+  switchStatusActive: { color: THEME.leafLight },
+  switchStatusInactive: { color: THEME.error },
+  inactiveWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(245,200,66,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.24)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  inactiveWarningText: {
+    color: THEME.offWhite,
+    fontSize: 12,
+    lineHeight: 18,
+    flex: 1,
+  },
   feedbackBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1 },
   feedbackSuccess: { backgroundColor: 'rgba(77,200,90,0.15)', borderColor: 'rgba(77,200,90,0.35)' },
   feedbackError: { backgroundColor: 'rgba(255,107,107,0.15)', borderColor: 'rgba(255,107,107,0.35)' },
