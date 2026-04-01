@@ -1,7 +1,7 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -14,8 +14,6 @@ import Animated, {
 
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/src/lib/supabase';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const THEME = {
   skyTop: '#0a1f0d',
@@ -31,14 +29,6 @@ const THEME = {
   error: '#ff6b6b',
   blue: '#5b9cff',
 };
-
-const STARS = Array.from({ length: 30 }, (_, i) => ({
-  id: i,
-  x: Math.random() * SCREEN_W,
-  y: Math.random() * (SCREEN_H * 0.25),
-  size: Math.random() * 2 + 0.8,
-  delay: Math.random() * 2000,
-}));
 
 function Star({ x, y, size, delay }: { x: number; y: number; size: number; delay: number }) {
   const opacity = useSharedValue(0.3);
@@ -74,6 +64,7 @@ type FraudeAlertRow = {
 
 export default function GestorDashboardScreen() {
   const { profile, user } = useAuth();
+  const { width, height } = useWindowDimensions();
   const [stats, setStats] = useState<DashboardStats>({
     visitasMes: 0,
     instrutores: 0,
@@ -169,11 +160,66 @@ export default function GestorDashboardScreen() {
     () => profile?.nomeCompleto ?? user?.user_metadata?.nome_completo ?? user?.email ?? 'Gestor Institucional',
     [profile?.nomeCompleto, user?.email, user?.user_metadata]
   );
+  const formattedDate = useMemo(
+    () =>
+      new Intl.DateTimeFormat('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+      }).format(new Date()),
+    []
+  );
+  const regionalLabel = useMemo(() => {
+    if (!profile?.regionalNome) {
+      return 'Regional não vinculada';
+    }
+
+    return `${profile.regionalNome}${profile.regionalUf ? ` - ${profile.regionalUf}` : ''}`;
+  }, [profile?.regionalNome, profile?.regionalUf]);
+  const operationalSummary = useMemo(() => {
+    if (isLoading) {
+      return 'Carregando visão operacional...';
+    }
+
+    if (stats.alertas > 0) {
+      return `${stats.alertas} alerta${stats.alertas === 1 ? '' : 's'} exigem atenção hoje.`;
+    }
+
+    if (stats.unreadNotifications > 0) {
+      return `${stats.unreadNotifications} notificação${stats.unreadNotifications === 1 ? '' : 'ões'} aguardam leitura.`;
+    }
+
+    return 'Operação estável no momento.';
+  }, [isLoading, stats.alertas, stats.unreadNotifications]);
+  const stars = useMemo(
+    () =>
+      Array.from({ length: 30 }, (_, i) => ({
+        id: i,
+        x: Math.random() * width,
+        y: Math.random() * (height * 0.25),
+        size: Math.random() * 2 + 0.8,
+        delay: Math.random() * 2000,
+      })),
+    [height, width]
+  );
+  const isWideLayout = width >= 1100;
+  const isMediumLayout = width >= 760;
+  const statCardWidth = useMemo(() => {
+    if (isWideLayout) {
+      return (width - 76) / 3;
+    }
+
+    if (isMediumLayout) {
+      return (width - 64) / 2;
+    }
+
+    return width - 40;
+  }, [isMediumLayout, isWideLayout, width]);
 
   return (
     <View style={styles.root}>
-      <View style={styles.skyBg}>
-        {STARS.map((star) => <Star key={star.id} x={star.x} y={star.y} size={star.size} delay={star.delay} />)}
+      <View style={[styles.skyBg, { height: height * 0.35 }]}>
+        {stars.map((star) => <Star key={star.id} x={star.x} y={star.y} size={star.size} delay={star.delay} />)}
         <View style={styles.moon}>
           <View style={styles.moonInner}>
             <View style={[styles.crater, { width: 8, height: 8, top: 10, left: 12 }]} />
@@ -192,6 +238,17 @@ export default function GestorDashboardScreen() {
               <FontAwesome6 name="chart-line" size={10} color={THEME.blue} />
               <Text style={styles.roleText}>Gestor Institucional</Text>
             </View>
+            <View style={styles.metaRow}>
+              <View style={styles.metaPill}>
+                <FontAwesome6 name="calendar-day" size={11} color={THEME.offWhite} />
+                <Text style={styles.metaPillText}>{formattedDate}</Text>
+              </View>
+              <View style={styles.metaPill}>
+                <FontAwesome6 name="location-dot" size={11} color={THEME.leafLight} />
+                <Text style={styles.metaPillText}>{regionalLabel}</Text>
+              </View>
+            </View>
+            <Text style={styles.headerSummary}>{operationalSummary}</Text>
           </View>
           <TouchableOpacity style={styles.notifBtn}>
             <FontAwesome6 name="bell" size={18} color={THEME.white} />
@@ -200,7 +257,7 @@ export default function GestorDashboardScreen() {
         </Animated.View>
 
         <View style={styles.statsGrid}>
-          <View style={[styles.statCard, styles.statCardLarge]}>
+          <View style={[styles.statCard, styles.statCardLarge, { width: isWideLayout ? statCardWidth * 2 + 12 : '100%' }]}>
             <View style={styles.statCardHeader}>
               <View style={[styles.statIcon, { backgroundColor: 'rgba(77,200,90,0.2)' }]}>
                 <FontAwesome6 name="calendar-check" size={20} color={THEME.leafLight} />
@@ -213,7 +270,7 @@ export default function GestorDashboardScreen() {
             <Text style={styles.statValue}>{isLoading ? '...' : stats.visitasMes}</Text>
             <Text style={styles.statLabel}>Visitas Este Mes</Text>
           </View>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, { width: statCardWidth }]}>
             <View style={styles.statCardHeader}>
               <View style={[styles.statIcon, { backgroundColor: 'rgba(91,156,255,0.2)' }]}>
                 <FontAwesome6 name="users" size={16} color={THEME.blue} />
@@ -222,7 +279,7 @@ export default function GestorDashboardScreen() {
             <Text style={styles.statValue}>{isLoading ? '...' : stats.instrutores}</Text>
             <Text style={styles.statLabel}>Instrutores</Text>
           </View>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, { width: statCardWidth }]}>
             <View style={styles.statCardHeader}>
               <View style={[styles.statIcon, { backgroundColor: 'rgba(245,200,66,0.2)' }]}>
                 <FontAwesome6 name="house-chimney" size={16} color={THEME.gold} />
@@ -231,7 +288,7 @@ export default function GestorDashboardScreen() {
             <Text style={styles.statValue}>{isLoading ? '...' : stats.propriedades}</Text>
             <Text style={styles.statLabel}>Propriedades</Text>
           </View>
-          <View style={[styles.statCard, styles.statCardWide]}>
+          <View style={[styles.statCard, styles.statCardWide, { width: isWideLayout ? statCardWidth : '100%' }]}>
             <View style={styles.statCardHeader}>
               <View style={[styles.statIcon, { backgroundColor: 'rgba(255,107,107,0.2)' }]}>
                 <FontAwesome6 name="triangle-exclamation" size={16} color={THEME.error} />
@@ -322,22 +379,44 @@ export default function GestorDashboardScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: THEME.skyTop },
-  skyBg: { position: 'absolute', top: 0, left: 0, right: 0, height: SCREEN_H * 0.35, backgroundColor: THEME.skyTop },
+  skyBg: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: THEME.skyTop },
   moon: { position: 'absolute', top: 45, right: 30, width: 42, height: 42, borderRadius: 21, backgroundColor: '#fffbe0', shadowColor: '#fffbe0', shadowOpacity: 0.8, shadowRadius: 20, elevation: 8 },
   moonInner: { width: '100%', height: '100%', borderRadius: 21, overflow: 'hidden' },
   crater: { position: 'absolute', backgroundColor: 'rgba(200,190,150,0.4)', borderRadius: 50 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 60 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 },
-  welcomeBox: {},
+  welcomeBox: { flex: 1, paddingRight: 14 },
   welcomeText: { fontSize: 14, color: THEME.textMuted, marginBottom: 4 },
   userName: { fontSize: 26, fontWeight: '700', color: THEME.white, marginBottom: 8 },
   roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(91,156,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
   roleText: { fontSize: 11, color: THEME.blue, fontWeight: '600' },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, marginBottom: 12 },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  metaPillText: {
+    fontSize: 12,
+    color: THEME.offWhite,
+    fontWeight: '600',
+  },
+  headerSummary: {
+    fontSize: 13,
+    color: THEME.offWhite,
+    lineHeight: 19,
+    maxWidth: 440,
+  },
   notifBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   notifDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.error },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 28, alignItems: 'stretch' },
   statCard: {
-    width: (SCREEN_W - 52) / 2,
     minHeight: 160,
     backgroundColor: THEME.cardBg,
     borderRadius: 20,
