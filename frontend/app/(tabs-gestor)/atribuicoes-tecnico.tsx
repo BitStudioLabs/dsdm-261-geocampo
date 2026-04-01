@@ -436,7 +436,7 @@ export default function AtribuicoesTecnicoScreen() {
               </View>
 
               {linkedProperties.length === 0 ? (
-                <Text style={styles.currentLinksEmpty}>Este tecnico ainda nao possui fazendas vinculadas.</Text>
+                <Text style={styles.currentLinksEmpty}>Este tecnico ainda não possui fazendas vinculadas.</Text>
               ) : null}
 
               {linkedProperties.map((property) => (
@@ -444,7 +444,7 @@ export default function AtribuicoesTecnicoScreen() {
                   <View style={styles.linkedPropertyCopy}>
                     <Text style={styles.linkedPropertyTitle}>{property.nome ?? 'Propriedade sem nome'}</Text>
                     <Text style={styles.linkedPropertyMeta}>
-                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao nao informada'}
+                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao não informada'}
                     </Text>
                   </View>
                   <TouchableOpacity
