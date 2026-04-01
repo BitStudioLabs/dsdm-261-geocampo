@@ -423,7 +423,7 @@ export default function UsuariosGestaoScreen() {
 
     if (error) {
       console.error('Erro ao atualizar usuario:', error);
-      setFeedback({ type: 'error', message: 'Não foi possivel salvar as alteracoes do usuario.' });
+      setFeedback({ type: 'error', message: 'Não foi possivel salvar as alterações do usuario.' });
       return;
     }
 
@@ -654,7 +654,7 @@ export default function UsuariosGestaoScreen() {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.editSectionTitle}>Dados pessoais</Text>
-                        <Text style={styles.editSectionSubtitle}>Atualize as informacoes principais do usuario.</Text>
+                        <Text style={styles.editSectionSubtitle}>Atualize as informações principais do usuario.</Text>
                       </View>
                     </View>
 
@@ -819,7 +819,21 @@ export default function UsuariosGestaoScreen() {
                     <View style={styles.propertiesSection}>
                       <View style={styles.propertiesHeader}>
                         <Text style={styles.sectionTitle}>Propriedades vinculadas</Text>
-                        {loadingPropertiesFor === userItem.id ? <ActivityIndicator size="small" color={THEME.leafLight} /> : null}
+                        <View style={styles.propertiesHeaderActions}>
+                          <TouchableOpacity
+                            style={styles.manageAssignmentsButton}
+                            activeOpacity={0.88}
+                            onPress={() =>
+                              router.push({
+                                pathname: '/(tabs-gestor)/atribuicoes-tecnico' as any,
+                                params: { userId: userItem.id },
+                              })
+                            }>
+                            <FontAwesome6 name="diagram-project" size={12} color={THEME.white} />
+                            <Text style={styles.manageAssignmentsButtonText}>Gerenciar</Text>
+                          </TouchableOpacity>
+                          {loadingPropertiesFor === userItem.id ? <ActivityIndicator size="small" color={THEME.leafLight} /> : null}
+                        </View>
                       </View>
 
                       {selectedProperties.length === 0 && loadingPropertiesFor !== userItem.id ? (
@@ -1169,6 +1183,27 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+  propertiesHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  manageAssignmentsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(91,156,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(91,156,255,0.28)',
+  },
+  manageAssignmentsButtonText: {
+    color: THEME.white,
+    fontSize: 12,
+    fontWeight: '700',
   },
   paginationRow: {
     flexDirection: 'row',
