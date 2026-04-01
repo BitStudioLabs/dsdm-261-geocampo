@@ -294,6 +294,11 @@ export default function AtribuicoesTecnicoScreen() {
     [instrutores, selectedInstructorId]
   );
 
+  const linkedProperties = useMemo(
+    () => propriedades.filter((property) => selectedPropertyIds.includes(property.id)),
+    [propriedades, selectedPropertyIds]
+  );
+
   const toggleProperty = (propertyId: number) => {
     setSelectedPropertyIds((current) =>
       current.includes(propertyId)
@@ -421,6 +426,39 @@ export default function AtribuicoesTecnicoScreen() {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Tecnico de Campo</Text>
+          {selectedInstructor ? (
+            <View style={styles.currentLinksCard}>
+              <View style={styles.currentLinksHeader}>
+                <Text style={styles.currentLinksTitle}>Vinculos atuais</Text>
+                <Text style={styles.currentLinksMeta}>
+                  {linkedProperties.length === 0 ? 'Nenhuma fazenda vinculada' : `${linkedProperties.length} vinculada(s)`}
+                </Text>
+              </View>
+
+              {linkedProperties.length === 0 ? (
+                <Text style={styles.currentLinksEmpty}>Este tecnico ainda nao possui fazendas vinculadas.</Text>
+              ) : null}
+
+              {linkedProperties.map((property) => (
+                <View key={`linked-${property.id}`} style={styles.linkedPropertyRow}>
+                  <View style={styles.linkedPropertyCopy}>
+                    <Text style={styles.linkedPropertyTitle}>{property.nome ?? 'Propriedade sem nome'}</Text>
+                    <Text style={styles.linkedPropertyMeta}>
+                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao nao informada'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.unlinkButton}
+                    activeOpacity={0.88}
+                    onPress={() => toggleProperty(property.id)}>
+                    <FontAwesome6 name="link-slash" size={11} color={THEME.white} />
+                    <Text style={styles.unlinkButtonText}>Retirar</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           <View style={styles.searchBox}>
             <FontAwesome6 name="magnifying-glass" size={14} color={THEME.muted} />
             <TextInput
@@ -694,6 +732,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+  },
+  currentLinksCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 14,
+    gap: 10,
+  },
+  currentLinksHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  currentLinksTitle: {
+    color: THEME.white,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  currentLinksMeta: {
+    color: THEME.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  currentLinksEmpty: {
+    color: THEME.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  linkedPropertyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    padding: 12,
+  },
+  linkedPropertyCopy: {
+    flex: 1,
+  },
+  linkedPropertyTitle: {
+    color: THEME.white,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  linkedPropertyMeta: {
+    color: THEME.muted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  unlinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,107,107,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,107,0.28)',
+  },
+  unlinkButtonText: {
+    color: THEME.white,
+    fontSize: 12,
+    fontWeight: '700',
   },
   sectionTitle: { color: THEME.white, fontSize: 17, fontWeight: '800' },
   sectionSubtitle: { color: THEME.muted, fontSize: 13, lineHeight: 18 },
