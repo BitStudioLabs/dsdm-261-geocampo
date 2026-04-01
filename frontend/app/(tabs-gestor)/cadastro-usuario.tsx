@@ -1,7 +1,7 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,7 +14,6 @@ import {
   View,
 } from 'react-native';
 
-import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/src/lib/supabase';
 
 const THEME = {
@@ -33,22 +32,30 @@ const THEME = {
 };
 
 const ROLE_OPTIONS = [
-  { value: 'instrutor', label: 'Instrutor de Campo' },
-  { value: 'proprietario', label: 'Proprietario Rural' },
-  { value: 'admin', label: 'Gestor Institucional' },
+  { value: 'instrutor', label: 'Instrutor de Campo', hint: 'Realiza visitas e acompanha propriedades em campo.' },
+  { value: 'proprietario', label: 'Proprietario Rural', hint: 'Acessa dados da propria fazenda e seu cadastro.' },
+  { value: 'admin', label: 'Gestor Institucional', hint: 'Gerencia usuarios, auditoria e operação da plataforma.' },
 ] as const;
 
 type UserRoleOption = (typeof ROLE_OPTIONS)[number]['value'];
 
+type RegionalOption = {
+  id: number;
+  nome: string;
+  uf: string;
+};
+
 export default function CadastroUsuarioScreen() {
-  const { profile } = useAuth();
   const [form, setForm] = useState({
     nomeCompleto: '',
     email: '',
     password: '',
     telefone: '',
     perfil: 'instrutor' as UserRoleOption,
+    regionalId: null as number | null,
   });
+  const [regionais, setRegionais] = useState<RegionalOption[]>([]);
+  const [isLoadingRegionais, setIsLoadingRegionais] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -71,9 +78,43 @@ export default function CadastroUsuarioScreen() {
     }));
   };
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadRegionais = async () => {
+      setIsLoadingRegionais(true);
+      const { data, error } = await supabase.from('regioes').select('id, nome, uf').order('nome');
+
+      if (!mounted) {
+        return;
+      }
+
+      if (error) {
+        console.error('Erro ao carregar regionais:', error);
+        setFeedback({ type: 'error', message: 'Não foi possivel carregar as regionais no momento.' });
+        setIsLoadingRegionais(false);
+        return;
+      }
+
+      setRegionais((data ?? []) as RegionalOption[]);
+      setIsLoadingRegionais(false);
+    };
+
+    loadRegionais();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleSubmit = async () => {
     if (!form.nomeCompleto.trim() || !form.email.trim() || !form.password.trim()) {
       setFeedback({ type: 'error', message: 'Preencha nome, e-mail e senha para continuar.' });
+      return;
+    }
+
+    if (!form.regionalId) {
+      setFeedback({ type: 'error', message: 'Selecione a regional do usuario para continuar.' });
       return;
     }
 
@@ -103,7 +144,7 @@ export default function CadastroUsuarioScreen() {
       email: form.email.trim(),
       perfil: form.perfil,
       telefone: form.telefone.trim() || null,
-      id_regional: profile?.regionalNome ? undefined : undefined,
+      id_regional: form.regionalId,
       ativo: true,
       atualizado_em: new Date().toISOString(),
     });
@@ -125,6 +166,7 @@ export default function CadastroUsuarioScreen() {
       password: '',
       telefone: '',
       perfil: 'instrutor',
+      regionalId: null,
     });
     setFeedback({ type: 'success', message: 'Usuario cadastrado com sucesso.' });
   };
@@ -186,20 +228,64 @@ export default function CadastroUsuarioScreen() {
               placeholderTextColor={THEME.textMuted}
             />
 
-            <Text style={styles.label}>Perfil</Text>
-            <View style={styles.roleRow}>
-              {ROLE_OPTIONS.map((option) => {
-                const selected = form.perfil === option.value;
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[styles.roleChip, selected && styles.roleChipActive]}
-                    onPress={() => handleChange('perfil', option.value)}
-                    activeOpacity={0.9}>
-                    <Text style={[styles.roleChipText, selected && styles.roleChipTextActive]}>{option.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <Text style={styles.label}>Permissão de acesso</Text>
+            <View style={styles.selectorSection}>
+              <Text style={styles.selectorHint}>Escolha o nivel de acesso que esse usuario tera dentro do sistema.</Text>
+              <View style={styles.selectorGrid}>
+                {ROLE_OPTIONS.map((option) => {
+                  const selected = form.perfil === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[styles.selectorCard, selected && styles.selectorCardActive]}
+                      onPress={() => handleChange('perfil', option.value)}
+                      activeOpacity={0.9}>
+                      <View style={styles.selectorHeader}>
+                        <Text style={[styles.selectorTitle, selected && styles.selectorTitleActive]}>{option.label}</Text>
+                        {selected ? <FontAwesome6 name="circle-check" size={14} color={THEME.leafLight} /> : null}
+                      </View>
+                      <Text style={[styles.selectorDescription, selected && styles.selectorDescriptionActive]}>{option.hint}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <Text style={styles.label}>Regional</Text>
+            <View style={styles.selectorSection}>
+              <Text style={styles.selectorHint}>Defina a regional principal vinculada a esse usuario.</Text>
+            {isLoadingRegionais ? (
+              <View style={styles.loadingRegionais}>
+                <ActivityIndicator size="small" color={THEME.leafLight} />
+                <Text style={styles.loadingRegionaisText}>Carregando regionais...</Text>
+              </View>
+            ) : (
+              <View style={styles.selectorGrid}>
+                {regionais.map((regional) => {
+                  const selected = form.regionalId === regional.id;
+                  return (
+                    <TouchableOpacity
+                      key={regional.id}
+                      style={[styles.selectorCard, selected && styles.selectorCardActive]}
+                      onPress={() =>
+                        setForm((current) => ({
+                          ...current,
+                          regionalId: regional.id,
+                        }))
+                      }
+                      activeOpacity={0.9}>
+                      <View style={styles.selectorHeader}>
+                        <Text style={[styles.selectorTitle, selected && styles.selectorTitleActive]}>{regional.nome}</Text>
+                        {selected ? <FontAwesome6 name="location-dot" size={14} color={THEME.gold} /> : null}
+                      </View>
+                      <Text style={[styles.selectorDescription, selected && styles.selectorDescriptionActive]}>
+                        Unidade {regional.uf}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
             </View>
 
             {feedback ? (
@@ -237,11 +323,60 @@ const styles = StyleSheet.create({
   card: { backgroundColor: THEME.cardBg, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: 'rgba(77,200,90,0.15)' },
   label: { color: THEME.offWhite, fontSize: 13, fontWeight: '700', marginBottom: 8, marginTop: 10 },
   input: { backgroundColor: THEME.inputBg, borderWidth: 1, borderColor: THEME.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: THEME.white, fontSize: 14 },
-  roleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  roleChip: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  roleChipActive: { backgroundColor: 'rgba(77,200,90,0.18)', borderColor: 'rgba(77,200,90,0.32)' },
-  roleChipText: { color: THEME.textMuted, fontSize: 12, fontWeight: '700' },
-  roleChipTextActive: { color: THEME.white },
+  selectorSection: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  selectorHint: {
+    color: THEME.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  selectorGrid: {
+    gap: 10,
+  },
+  loadingRegionais: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, paddingVertical: 8 },
+  loadingRegionaisText: { color: THEME.textMuted, fontSize: 12, fontWeight: '600' },
+  selectorCard: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  selectorCardActive: {
+    backgroundColor: 'rgba(77,200,90,0.12)',
+    borderColor: 'rgba(77,200,90,0.35)',
+  },
+  selectorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  selectorTitle: {
+    color: THEME.white,
+    fontSize: 13,
+    fontWeight: '800',
+    flex: 1,
+  },
+  selectorTitleActive: {
+    color: THEME.white,
+  },
+  selectorDescription: {
+    color: THEME.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  selectorDescriptionActive: {
+    color: THEME.offWhite,
+  },
   feedbackBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginTop: 16, borderWidth: 1 },
   feedbackSuccess: { backgroundColor: 'rgba(77,200,90,0.15)', borderColor: 'rgba(77,200,90,0.35)' },
   feedbackError: { backgroundColor: 'rgba(255,107,107,0.15)', borderColor: 'rgba(255,107,107,0.35)' },
