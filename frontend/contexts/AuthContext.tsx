@@ -66,6 +66,10 @@ function getHomeRoute(role: UserRole): '/(tabs)' | '/(tabs-gestor)' {
     return '/(tabs-gestor)';
   }
 
+  if (role === 'instrutor') {
+    return '/(tabs)';
+  }
+
   return '/(tabs)';
 }
 

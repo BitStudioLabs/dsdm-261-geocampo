@@ -1,5 +1,9 @@
+import React from 'react';
 import { FontAwesome6 } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { router, Tabs } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
+
+import { useAuth } from '@/contexts/AuthContext';
 
 const THEME = {
   cardBg: 'rgba(10,31,13,0.95)',
@@ -8,6 +12,37 @@ const THEME = {
 };
 
 export default function GestorTabLayout() {
+  const { homeRoute, isAuthenticated, isLoading, role } = useAuth();
+
+  React.useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+
+    if (role !== 'admin') {
+      router.replace('/(tabs)');
+    }
+  }, [homeRoute, isAuthenticated, isLoading, role]);
+
+  if (isLoading || !isAuthenticated || homeRoute !== '/(tabs-gestor)') {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: THEME.cardBg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <ActivityIndicator color={THEME.leafLight} size="large" />
+      </View>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{

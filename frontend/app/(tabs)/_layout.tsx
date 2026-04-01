@@ -1,6 +1,9 @@
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { router, Tabs } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
+
+import { useAuth } from '@/contexts/AuthContext';
 
 const THEME = {
   skyTop: '#0a1f0d',
@@ -10,6 +13,37 @@ const THEME = {
 };
 
 export default function TabsLayout() {
+  const { homeRoute, isAuthenticated, isLoading, role } = useAuth();
+
+  React.useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+
+    if (role === 'admin') {
+      router.replace('/(tabs-gestor)');
+    }
+  }, [homeRoute, isAuthenticated, isLoading, role]);
+
+  if (isLoading || !isAuthenticated || homeRoute !== '/(tabs)') {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: THEME.skyTop,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <ActivityIndicator color={THEME.leafLight} size="large" />
+      </View>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
