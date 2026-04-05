@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   SafeAreaView,
   ScrollView,
@@ -21,6 +22,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/src/lib/supabase';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -28,7 +31,6 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const THEME = {
   skyTop: '#0a1f0d',
   skyMid: '#0f2e14',
-  skyBottom: '#1a4a20',
   starColor: 'rgba(255,255,255,0.8)',
   leafLight: '#4dc85a',
   cornYellow: '#f5c842',
@@ -41,67 +43,98 @@ const THEME = {
 const PERIODOS = ['7 dias', 'Mes', 'Ano'] as const;
 type Periodo = (typeof PERIODOS)[number];
 
-type ReportData = {
-  score: string;
-  delta: string;
-  visitasLabel: string;
-  visitasValor: string;
-  alertasValor: string;
-  alertas: readonly { id: string; title: string; subtitle: string; date: string; tone: 'danger' | 'warning'; icon: keyof typeof Ionicons.glyphMap }[];
-  historico: readonly { id: string; title: string; date: string; score: number; icon: keyof typeof Ionicons.glyphMap }[];
+type VisitStatusDb =
+  | 'pendente'
+  | 'em_andamento'
+  | 'finalizada'
+  | 'em_analise'
+  | 'aprovada'
+  | 'rejeitada'
+  | 'excluida'
+  | null;
+
+type ReportVisitRow = {
+  id: number;
+  criado_em: string | null;
+  id_propriedade: number | null;
+  status_visita: VisitStatusDb;
 };
 
-const RELATORIOS: Record<Periodo, ReportData> = {
-  '7 dias': {
-    score: '84.6',
-    delta: '+1.4',
-    visitasLabel: 'Visitas em 7 dias',
-    visitasValor: '6',
-    alertasValor: '1',
-    alertas: [{ id: '1', title: 'Sitio Boa Esperanca', subtitle: 'Score 61 - IP inconsistente com regiao', date: '22/05', tone: 'warning', icon: 'warning' }],
-    historico: [
-      { id: '1', title: 'Faz. Santa Clara', date: '24/05/2025 - 09:41', score: 94, icon: 'leaf-outline' },
-      { id: '2', title: 'Sitio Boa Esperanca', date: '22/05/2025 - 13:20', score: 61, icon: 'paw-outline' },
-      { id: '3', title: 'Estancia Pedra Branca', date: '21/05/2025 - 15:00', score: 89, icon: 'rose-outline' },
-    ],
-  },
-  Mes: {
-    score: '87.4',
-    delta: '+3.2',
-    visitasLabel: 'Visitas no mes',
-    visitasValor: '24',
-    alertasValor: '2',
-    alertas: [
-      { id: '1', title: 'Chacara Vale Verde', subtitle: 'Score 22 - Alta prob. de VPN detectada', date: '23/05', tone: 'danger', icon: 'alert-circle' },
-      { id: '2', title: 'Sitio Boa Esperanca', subtitle: 'Score 61 - IP inconsistente com regiao', date: '22/05', tone: 'warning', icon: 'warning' },
-    ],
-    historico: [
-      { id: '1', title: 'Faz. Santa Clara', date: '24/05/2025 - 09:41', score: 94, icon: 'leaf-outline' },
-      { id: '2', title: 'Sitio Boa Esperanca', date: '22/05/2025 - 13:20', score: 61, icon: 'paw-outline' },
-      { id: '3', title: 'Chacara Vale Verde', date: '23/05/2025 - 08:10', score: 22, icon: 'nutrition-outline' },
-      { id: '4', title: 'Rancho Ipe Amarelo', date: '20/05/2025 - 10:15', score: 97, icon: 'flower-outline' },
-    ],
-  },
-  Ano: {
-    score: '90.1',
-    delta: '+6.8',
-    visitasLabel: 'Visitas no ano',
-    visitasValor: '86',
-    alertasValor: '5',
-    alertas: [
-      { id: '1', title: 'Chacara Vale Verde', subtitle: 'Score 22 - Alta prob. de VPN detectada', date: '23/05', tone: 'danger', icon: 'alert-circle' },
-      { id: '2', title: 'Sitio Boa Esperanca', subtitle: 'Score 61 - IP inconsistente com regiao', date: '22/05', tone: 'warning', icon: 'warning' },
-      { id: '3', title: 'Fazenda Horizonte', subtitle: 'Score 58 - Divergencia de localizacao em abril', date: '17/04', tone: 'warning', icon: 'warning' },
-    ],
-    historico: [
-      { id: '1', title: 'Faz. Santa Clara', date: '24/05/2025 - 09:41', score: 94, icon: 'leaf-outline' },
-      { id: '2', title: 'Rancho Ipe Amarelo', date: '20/05/2025 - 10:15', score: 97, icon: 'flower-outline' },
-      { id: '3', title: 'Fazenda Bela Vista', date: '18/05/2025 - 15:20', score: 91, icon: 'home-outline' },
-      { id: '4', title: 'Sitio Boa Esperanca', date: '22/05/2025 - 13:20', score: 61, icon: 'paw-outline' },
-      { id: '5', title: 'Chacara Vale Verde', date: '23/05/2025 - 08:10', score: 22, icon: 'nutrition-outline' },
-    ],
-  },
+type PropertyLookup = Record<number, { nome: string | null }>;
+
+type HistoryItem = {
+  id: string;
+  title: string;
+  date: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  status: string;
 };
+
+function getPeriodStart(periodo: Periodo) {
+  const now = new Date();
+
+  if (periodo === '7 dias') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  if (periodo === 'Mes') {
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  return new Date(now.getFullYear(), 0, 1);
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '--/--/---- - --:--';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '--/--/---- - --:--';
+  }
+
+  return parsed.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function getVisitIcon(status?: VisitStatusDb): keyof typeof Ionicons.glyphMap {
+  if (status === 'aprovada') {
+    return 'checkmark-circle-outline';
+  }
+
+  if (status === 'rejeitada') {
+    return 'close-circle-outline';
+  }
+
+  if (status === 'em_analise') {
+    return 'time-outline';
+  }
+
+  return 'clipboard-outline';
+}
+
+function getVisitStatusLabel(status?: VisitStatusDb) {
+  switch (status) {
+    case 'aprovada':
+      return 'Aprovada';
+    case 'rejeitada':
+      return 'Rejeitada';
+    case 'em_analise':
+      return 'Em análise';
+    case 'em_andamento':
+      return 'Enviada';
+    case 'finalizada':
+      return 'Concluída';
+    default:
+      return 'Registrada';
+  }
+}
 
 const STARS = Array.from({ length: 25 }, (_, i) => ({
   id: i,
@@ -163,10 +196,7 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
     blink.value = withDelay(
       delay,
       withRepeat(
-        withSequence(
-          withTiming(1, { duration: 900 }),
-          withTiming(0.25, { duration: 1100 })
-        ),
+        withSequence(withTiming(1, { duration: 900 }), withTiming(0.25, { duration: 1100 })),
         -1,
         true
       )
@@ -206,9 +236,109 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
 }));
 
 export default function RelatoriosScreen() {
+  const { profile, user } = useAuth();
   const [periodoAtivo, setPeriodoAtivo] = useState<Periodo>('Mes');
-  const data = useMemo(() => RELATORIOS[periodoAtivo], [periodoAtivo]);
-  const progressWidth = useMemo(() => `${Math.min(Number(data.score), 100)}%` as const, [data.score]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadRelatorios() {
+      const currentUserId = profile?.id ?? user?.id;
+
+      if (!currentUserId) {
+        if (mounted) {
+          setHistory([]);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setErrorMessage('');
+
+        const start = getPeriodStart(periodoAtivo);
+        const { data: visitsData, error: visitsError } = await supabase
+          .from('visitas')
+          .select('id, criado_em, id_propriedade, status_visita')
+          .eq('id_instrutor', currentUserId)
+          .gte('criado_em', start.toISOString())
+          .order('criado_em', { ascending: false });
+
+        if (visitsError) {
+          throw visitsError;
+        }
+
+        const visits = (visitsData ?? []) as ReportVisitRow[];
+        const propertyIds = Array.from(
+          new Set(visits.map((item) => item.id_propriedade).filter((value): value is number => typeof value === 'number'))
+        );
+
+        let propertyLookup: PropertyLookup = {};
+
+        if (propertyIds.length > 0) {
+          const { data: propertiesData, error: propertiesError } = await supabase
+            .from('propriedades')
+            .select('id, nome')
+            .in('id', propertyIds);
+
+          if (propertiesError) {
+            throw propertiesError;
+          }
+
+          propertyLookup = (propertiesData ?? []).reduce<PropertyLookup>((acc, property) => {
+            acc[property.id] = property;
+            return acc;
+          }, {});
+        }
+
+        const nextHistory = visits.map((visit, index) => ({
+          id: String(visit.id),
+          title:
+            (visit.id_propriedade ? propertyLookup[visit.id_propriedade]?.nome : null) ??
+            `Visita ${index + 1}`,
+          date: formatDateTime(visit.criado_em),
+          icon: getVisitIcon(visit.status_visita),
+          status: getVisitStatusLabel(visit.status_visita),
+        }));
+
+        if (mounted) {
+          setHistory(nextHistory);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar relatórios do instrutor:', error);
+        if (mounted) {
+          setErrorMessage('Não foi possível carregar os relatórios agora.');
+          setHistory([]);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadRelatorios();
+
+    return () => {
+      mounted = false;
+    };
+  }, [periodoAtivo, profile?.id, user?.id]);
+
+  const visitsLabel = useMemo(() => {
+    if (periodoAtivo === '7 dias') {
+      return 'Visitas em 7 dias';
+    }
+
+    if (periodoAtivo === 'Mes') {
+      return 'Visitas no mês';
+    }
+
+    return 'Visitas no ano';
+  }, [periodoAtivo]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -216,11 +346,11 @@ export default function RelatoriosScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <View style={styles.skyBg} />
-          
+
           {STARS.map((star) => (
             <AnimatedStar key={star.id} star={star} />
           ))}
-          
+
           {FIREFLIES.map((firefly) => (
             <Firefly key={firefly.id} {...firefly} />
           ))}
@@ -236,7 +366,7 @@ export default function RelatoriosScreen() {
           </View>
 
           <View style={styles.header}>
-            <Text style={styles.title}>Relatorios</Text>
+            <Text style={styles.title}>Relatórios</Text>
             <TouchableOpacity activeOpacity={0.9} style={styles.filterButton}>
               <Ionicons name="options-outline" size={16} color={THEME.link} />
               <Text style={styles.filterText}>Filtrar</Text>
@@ -259,65 +389,66 @@ export default function RelatoriosScreen() {
           </View>
 
           <View style={styles.scoreCard}>
-            <View>
-              <Text style={styles.scoreCaption}>Score medio do instrutor em {periodoAtivo === 'Mes' ? 'mes' : periodoAtivo.toLowerCase()}</Text>
-              <View style={styles.scoreRow}>
-                <Text style={styles.scoreValue}>{data.score}</Text>
-                <Text style={styles.scoreDelta}>{data.delta}</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: progressWidth }]} />
-              </View>
+            <View style={styles.scoreCardCopy}>
+              <Text style={styles.scoreCaption}>
+                Resumo de visitas em {periodoAtivo === 'Mes' ? 'mês' : periodoAtivo.toLowerCase()}
+              </Text>
+              <Text style={styles.scoreSummaryTitle}>Acompanhe seu histórico de campo</Text>
+              <Text style={styles.scoreSummaryText}>
+                Consulte as visitas realizadas no período e o histórico correspondente ao filtro escolhido.
+              </Text>
             </View>
             <View style={styles.trophyWrap}>
-              <Ionicons name="trophy" size={28} color={THEME.cornYellow} />
+              <Ionicons name="clipboard-outline" size={28} color={THEME.cornYellow} />
             </View>
           </View>
         </View>
 
         <View style={styles.summaryGrid}>
-          <View style={styles.summaryCard}>
+          <View style={styles.summaryCardWide}>
             <Ionicons name="clipboard-outline" size={22} color={THEME.cornYellow} />
-            <Text style={styles.summaryValue}>{data.visitasValor}</Text>
-            <Text style={styles.summaryLabel}>{data.visitasLabel}</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Ionicons name="warning-outline" size={22} color={colors.warning} />
-            <Text style={[styles.summaryValue, styles.summaryDanger]}>{data.alertasValor}</Text>
-            <Text style={styles.summaryLabel}>Alertas ativos</Text>
+            <Text style={styles.summaryValue}>{isLoading ? '...' : String(history.length)}</Text>
+            <Text style={styles.summaryLabel}>{visitsLabel}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ALERTAS DE POSSIVEL FRAUDE</Text>
-          {data.alertas.map((alerta) => (
-            <View key={alerta.id} style={styles.alertRow}>
-              <View style={[styles.alertIconWrap, alerta.tone === 'danger' ? styles.alertDangerBg : styles.alertWarningBg]}>
-                <Ionicons name={alerta.icon} size={16} color={alerta.tone === 'danger' ? colors.danger : colors.warning} />
-              </View>
-              <View style={styles.alertTextWrap}>
-                <Text style={styles.alertTitle}>{alerta.title}</Text>
-                <Text style={styles.alertSubtitle}>{alerta.subtitle}</Text>
-              </View>
-              <Text style={styles.alertDate}>{alerta.date}</Text>
+          <Text style={styles.sectionTitle}>
+            HISTÓRICO DE VISITAS - {periodoAtivo === 'Mes' ? 'MÊS' : periodoAtivo.toUpperCase()}
+          </Text>
+          {isLoading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator color={THEME.leafLight} size="small" />
+              <Text style={styles.loadingText}>Carregando histórico...</Text>
             </View>
-          ))}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>HISTORICO DE VISITAS - {periodoAtivo.toUpperCase()}</Text>
-          {data.historico.map((item) => (
-            <TouchableOpacity key={item.id} activeOpacity={0.9} style={styles.historyRow}>
-              <View style={styles.historyIconWrap}>
-                <Ionicons name={item.icon} size={20} color={THEME.leafLight} />
-              </View>
-              <View style={styles.historyTextWrap}>
-                <Text style={styles.historyTitle}>{item.title}</Text>
-                <Text style={styles.historySubtitle}>{item.date}</Text>
-              </View>
-              <Text style={[styles.historyScore, item.score < 60 && styles.historyScoreDanger]}>{item.score}</Text>
-            </TouchableOpacity>
-          ))}
+          ) : errorMessage ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="alert-circle-outline" size={24} color={THEME.cornYellow} />
+              <Text style={styles.emptyTitle}>Relatórios indisponíveis</Text>
+              <Text style={styles.emptyDescription}>{errorMessage}</Text>
+            </View>
+          ) : history.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="clipboard-outline" size={24} color={THEME.textGray} />
+              <Text style={styles.emptyTitle}>Nenhuma visita no período</Text>
+              <Text style={styles.emptyDescription}>
+                Quando houver visitas nesse filtro, elas vão aparecer aqui.
+              </Text>
+            </View>
+          ) : (
+            history.map((item) => (
+              <TouchableOpacity key={item.id} activeOpacity={0.9} style={styles.historyRow}>
+                <View style={styles.historyIconWrap}>
+                  <Ionicons name={item.icon} size={20} color={THEME.leafLight} />
+                </View>
+                <View style={styles.historyTextWrap}>
+                  <Text style={styles.historyTitle}>{item.title}</Text>
+                  <Text style={styles.historySubtitle}>{item.date}</Text>
+                </View>
+                <Text style={styles.historyStatus}>{item.status}</Text>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -380,16 +511,13 @@ const styles = StyleSheet.create({
   periodChipText: { color: THEME.textGray, fontSize: 13, fontWeight: '700' },
   periodChipTextActive: { color: '#fff' },
   scoreCard: { backgroundColor: THEME.cardBg, borderRadius: 22, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: THEME.cardBorder, zIndex: 10 },
+  scoreCardCopy: { flex: 1, paddingRight: 16 },
   scoreCaption: { color: THEME.link, fontSize: 12, marginBottom: 6 },
-  scoreRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 12 },
-  scoreValue: { color: '#fff', fontSize: 42, fontWeight: '800', lineHeight: 44, textShadowColor: 'rgba(0,0,0,0.2)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
-  scoreDelta: { color: THEME.leafLight, fontSize: 16, fontWeight: '700', marginBottom: 5 },
-  progressTrack: { width: 160, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)' },
-  progressFill: { height: '100%', borderRadius: 999, backgroundColor: THEME.leafLight },
+  scoreSummaryTitle: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 6 },
+  scoreSummaryText: { color: THEME.textGray, fontSize: 13, lineHeight: 18, maxWidth: 280 },
   trophyWrap: { width: 64, height: 64, borderRadius: 18, backgroundColor: 'rgba(245,200,66,0.15)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(245,200,66,0.25)' },
-  summaryGrid: { flexDirection: 'row', gap: 12, marginBottom: 18, paddingHorizontal: 20 },
-  summaryCard: {
-    flex: 1,
+  summaryGrid: { marginBottom: 18, paddingHorizontal: 20 },
+  summaryCardWide: {
     backgroundColor: colors.card,
     borderRadius: 20,
     paddingVertical: 18,
@@ -404,7 +532,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.1)',
   },
   summaryValue: { marginTop: 10, color: colors.textDark, fontSize: 34, fontWeight: '800' },
-  summaryDanger: { color: colors.danger },
   summaryLabel: { color: colors.textMuted, fontSize: 13, marginTop: 2, textAlign: 'center' },
   section: {
     backgroundColor: colors.card,
@@ -421,19 +548,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.1)',
   },
   sectionTitle: { color: THEME.skyMid, fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 12 },
-  alertRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(77,200,90,0.15)' },
-  alertIconWrap: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  alertDangerBg: { backgroundColor: '#FFE8E8' },
-  alertWarningBg: { backgroundColor: '#FFF3D9' },
-  alertTextWrap: { flex: 1 },
-  alertTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  alertSubtitle: { color: colors.textMuted, fontSize: 12, lineHeight: 16 },
-  alertDate: { color: '#A49F95', fontSize: 12, fontWeight: '700', marginLeft: 8 },
   historyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(77,200,90,0.15)' },
   historyIconWrap: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(77,200,90,0.12)', marginRight: 12 },
   historyTextWrap: { flex: 1 },
   historyTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginBottom: 2 },
   historySubtitle: { color: colors.textMuted, fontSize: 12 },
-  historyScore: { color: THEME.leafLight, fontSize: 26, fontWeight: '800', marginLeft: 10 },
-  historyScoreDanger: { color: colors.danger },
+  historyStatus: { color: THEME.skyMid, fontSize: 12, fontWeight: '700', marginLeft: 10 },
+  loadingWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
+  loadingText: { color: colors.textMuted, fontSize: 13, marginTop: 10 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, paddingHorizontal: 16 },
+  emptyTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginTop: 10, marginBottom: 4 },
+  emptyDescription: { color: colors.textMuted, fontSize: 13, lineHeight: 18, textAlign: 'center' },
 });

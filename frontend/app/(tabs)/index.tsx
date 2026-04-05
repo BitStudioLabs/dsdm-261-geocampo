@@ -1,7 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
+  RefreshControl,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -21,6 +25,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/src/lib/supabase';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -28,9 +34,6 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const THEME = {
   skyTop: '#0a1f0d',
   skyMid: '#0f2e14',
-  skyBottom: '#1a4a20',
-  ground: '#3d2b1a',
-  groundTop: '#5a3d20',
   starColor: 'rgba(255,255,255,0.8)',
   leafLight: '#4dc85a',
   cornYellow: '#f5c842',
@@ -40,10 +43,27 @@ const THEME = {
   link: '#7de88a',
 };
 
-type StatusType = 'Agendada' | 'Hoje' | 'Em andamento' | 'Concluida';
+type StatusType =
+  | 'Agendada'
+  | 'Hoje'
+  | 'Em andamento'
+  | 'Concluída'
+  | 'Em análise'
+  | 'Aprovada'
+  | 'Rejeitada';
 type DashboardFilter = 'atribuidas' | 'hoje' | 'concluidas';
 
-type Propriedade = {
+type VisitStatusDb =
+  | 'pendente'
+  | 'em_andamento'
+  | 'finalizada'
+  | 'em_analise'
+  | 'aprovada'
+  | 'rejeitada'
+  | 'excluida'
+  | null;
+
+type DashboardItem = {
   id: string;
   nome: string;
   local: string;
@@ -54,79 +74,32 @@ type Propriedade = {
   iconeBg: string;
 };
 
-const STATS = [
-  { id: 'atribuidas', label: 'Atribuidas', value: '4', tone: 'dark' },
-  { id: 'hoje', label: 'Hoje', value: '2', tone: 'light' },
-  { id: 'concluidas', label: 'Concluidas', value: '2', tone: 'green' },
-] as const satisfies readonly {
-  id: DashboardFilter;
-  label: string;
-  value: string;
-  tone: 'dark' | 'light' | 'green';
-}[];
+type DashboardStats = Record<DashboardFilter, string>;
 
-const PROPRIEDADES: Propriedade[] = [
+type AtribuicaoDashboardRow = {
+  id: number;
+  id_propriedade: number;
+  ativa: boolean;
+  atualizado_em?: string | null;
+  criado_em?: string | null;
+};
+
+type VisitaDashboardRow = {
+  id: number;
+  id_propriedade: number | null;
+  criado_em?: string | null;
+  status_visita?: VisitStatusDb;
+};
+
+type PropertyLookup = Record<
+  number,
   {
-    id: '1',
-    nome: 'Fazenda Santa Clara',
-    local: 'Ribeirao Preto, SP',
-    distancia: '12 km',
-    status: 'Hoje',
-    visitaEm: 'Hoje - 09:30',
-    icone: 'leaf-outline',
-    iconeBg: '#DFF6E8',
-  },
-  {
-    id: '2',
-    nome: 'Sitio Boa Esperanca',
-    local: 'Bauru, SP',
-    distancia: '38 km',
-    status: 'Agendada',
-    visitaEm: 'Amanha - 14:00',
-    icone: 'paw-outline',
-    iconeBg: '#EAF5DF',
-  },
-  {
-    id: '3',
-    nome: 'Chacara Vale Verde',
-    local: 'Jau, SP',
-    distancia: '55 km',
-    status: 'Em andamento',
-    visitaEm: '23/05 - 08:30',
-    icone: 'nutrition-outline',
-    iconeBg: '#F5F0D9',
-  },
-  {
-    id: '4',
-    nome: 'Estancia Pedra Branca',
-    local: 'Cravinhos, SP',
-    distancia: '16 km',
-    status: 'Hoje',
-    visitaEm: 'Hoje - 15:00',
-    icone: 'rose-outline',
-    iconeBg: '#E6F3E1',
-  },
-  {
-    id: '5',
-    nome: 'Rancho Ipe Amarelo',
-    local: 'Lencois Paulista',
-    distancia: '20 km',
-    status: 'Concluida',
-    visitaEm: '20/05 - 10:15',
-    icone: 'flower-outline',
-    iconeBg: '#F4EAD9',
-  },
-  {
-    id: '6',
-    nome: 'Fazenda Bela Vista',
-    local: 'Sertaozinho, SP',
-    distancia: '18 km',
-    status: 'Concluida',
-    visitaEm: '18/05 - 15:20',
-    icone: 'home-outline',
-    iconeBg: '#E8F0DA',
-  },
-];
+    id: number;
+    nome: string | null;
+    municipio_nome: string | null;
+    uf: string | null;
+  }
+>;
 
 const STARS = Array.from({ length: 30 }, (_, i) => ({
   id: i,
@@ -137,7 +110,15 @@ const STARS = Array.from({ length: 30 }, (_, i) => ({
   twinkleDelay: Math.random() * 3000,
 }));
 
-function AnimatedStar({ star }: { star: typeof STARS[0] }) {
+const FIREFLIES = Array.from({ length: 5 }, (_, i) => ({
+  id: i,
+  startX: SCREEN_W * (0.1 + Math.random() * 0.8),
+  startY: 40 + Math.random() * 80,
+  delay: i * 300,
+  size: 3 + Math.random() * 2,
+}));
+
+function AnimatedStar({ star }: { star: (typeof STARS)[0] }) {
   const twinkle = useSharedValue(star.opacity);
 
   useEffect(() => {
@@ -176,7 +157,17 @@ function AnimatedStar({ star }: { star: typeof STARS[0] }) {
   );
 }
 
-function Firefly({ startX, startY, delay, size }: { startX: number; startY: number; delay: number; size: number }) {
+function Firefly({
+  startX,
+  startY,
+  delay,
+  size,
+}: {
+  startX: number;
+  startY: number;
+  delay: number;
+  size: number;
+}) {
   const progress = useSharedValue(0);
   const blink = useSharedValue(0.3);
 
@@ -188,10 +179,7 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
     blink.value = withDelay(
       delay,
       withRepeat(
-        withSequence(
-          withTiming(1, { duration: 900 }),
-          withTiming(0.25, { duration: 1100 })
-        ),
+        withSequence(withTiming(1, { duration: 900 }), withTiming(0.25, { duration: 1100 })),
         -1,
         true
       )
@@ -222,13 +210,171 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
   return <Animated.View style={[glowStyle, { pointerEvents: 'none' }]} />;
 }
 
-const FIREFLIES = Array.from({ length: 5 }, (_, i) => ({
-  id: i,
-  startX: SCREEN_W * (0.1 + Math.random() * 0.8),
-  startY: 40 + Math.random() * 80,
-  delay: i * 300,
-  size: 3 + Math.random() * 2,
-}));
+function formatVisitDate(dateValue?: string | null) {
+  if (!dateValue) {
+    return 'Sem data definida';
+  }
+
+  const parsed = new Date(dateValue);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Sem data definida';
+  }
+
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+
+  const isSameDay =
+    parsed.getDate() === today.getDate() &&
+    parsed.getMonth() === today.getMonth() &&
+    parsed.getFullYear() === today.getFullYear();
+
+  const isTomorrow =
+    parsed.getDate() === tomorrow.getDate() &&
+    parsed.getMonth() === tomorrow.getMonth() &&
+    parsed.getFullYear() === tomorrow.getFullYear();
+
+  const time = parsed.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  if (isSameDay) {
+    return `Hoje - ${time}`;
+  }
+
+  if (isTomorrow) {
+    return `Amanhã - ${time}`;
+  }
+
+  return parsed.toLocaleDateString('pt-BR');
+}
+
+function mapVisitStatusToLabel(status?: VisitStatusDb, dateValue?: string | null, isCompleted?: boolean): StatusType {
+  if (status === 'em_andamento') {
+    return 'Em andamento';
+  }
+
+  if (status === 'em_analise') {
+    return 'Em análise';
+  }
+
+  if (status === 'aprovada') {
+    return 'Aprovada';
+  }
+
+  if (status === 'rejeitada') {
+    return 'Rejeitada';
+  }
+
+  if (status === 'finalizada') {
+    return 'Concluída';
+  }
+
+  if (isCompleted) {
+    return 'Concluída';
+  }
+
+  if (!dateValue) {
+    return 'Agendada';
+  }
+
+  const parsed = new Date(dateValue);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Agendada';
+  }
+
+  const now = new Date();
+  const sameDay =
+    parsed.getDate() === now.getDate() &&
+    parsed.getMonth() === now.getMonth() &&
+    parsed.getFullYear() === now.getFullYear();
+
+  if (sameDay) {
+    return parsed.getTime() <= now.getTime() ? 'Em andamento' : 'Hoje';
+  }
+
+  return 'Agendada';
+}
+
+function extractAvatarPath(value: string) {
+  const publicMarker = '/storage/v1/object/public/avatares/';
+  const signMarker = '/storage/v1/object/sign/avatares/';
+
+  if (value.includes(publicMarker)) {
+    return decodeURIComponent(value.split(publicMarker)[1]?.split('?')[0] ?? '');
+  }
+
+  if (value.includes(signMarker)) {
+    return decodeURIComponent(value.split(signMarker)[1]?.split('?')[0] ?? '');
+  }
+
+  return value;
+}
+
+function getAvatarStorageKey(userId: string) {
+  return `profile-avatar-path:${userId}`;
+}
+
+function getIconByIndex(index: number): {
+  icone: keyof typeof Ionicons.glyphMap;
+  iconeBg: string;
+} {
+  const options = [
+    { icone: 'leaf-outline', iconeBg: '#DFF6E8' },
+    { icone: 'paw-outline', iconeBg: '#EAF5DF' },
+    { icone: 'nutrition-outline', iconeBg: '#F5F0D9' },
+    { icone: 'rose-outline', iconeBg: '#E6F3E1' },
+    { icone: 'flower-outline', iconeBg: '#F4EAD9' },
+    { icone: 'home-outline', iconeBg: '#E8F0DA' },
+  ] as const;
+
+  return options[index % options.length];
+}
+
+function buildAssignmentItem(
+  item: AtribuicaoDashboardRow,
+  propertyLookup: PropertyLookup,
+  index: number,
+  latestVisit?: VisitaDashboardRow | null
+): DashboardItem {
+  const iconData = getIconByIndex(index);
+  const visitDate = latestVisit?.criado_em ?? item.atualizado_em ?? item.criado_em ?? null;
+  const property = propertyLookup[item.id_propriedade] ?? null;
+  const resolvedStatus = mapVisitStatusToLabel(latestVisit?.status_visita, visitDate, false);
+
+  return {
+    id: `atr-${item.id}`,
+    nome: property?.nome ?? 'Propriedade sem nome',
+    local: [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') || 'Localização não informada',
+    distancia: latestVisit ? 'Ultima visita registrada' : 'A conferir',
+    status: resolvedStatus,
+    visitaEm: formatVisitDate(visitDate),
+    ...iconData,
+  };
+}
+
+function buildVisitItem(
+  item: VisitaDashboardRow,
+  propertyLookup: PropertyLookup,
+  index: number
+): DashboardItem {
+  const iconData = getIconByIndex(index);
+  const doneDate = item.criado_em ?? null;
+  const property = item.id_propriedade ? propertyLookup[item.id_propriedade] ?? null : null;
+
+  return {
+    id: `vis-${item.id}`,
+    nome: property?.nome ?? 'Propriedade sem nome',
+    local: [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') || 'Localização não informada',
+    distancia: 'Visita realizada',
+    status: mapVisitStatusToLabel(item.status_visita, doneDate, true),
+    visitaEm: formatVisitDate(doneDate),
+    ...iconData,
+  };
+}
 
 const getStatusStyle = (status: StatusType) => {
   switch (status) {
@@ -238,6 +384,12 @@ const getStatusStyle = (status: StatusType) => {
       return { bg: 'rgba(245,200,66,0.15)', text: THEME.cornYellow, dot: THEME.cornYellow };
     case 'Em andamento':
       return { bg: 'rgba(74,163,216,0.15)', text: '#7ac4f0', dot: colors.info };
+    case 'Em análise':
+      return { bg: 'rgba(245,200,66,0.15)', text: THEME.cornYellow, dot: THEME.cornYellow };
+    case 'Aprovada':
+      return { bg: 'rgba(46,175,109,0.15)', text: colors.success, dot: colors.success };
+    case 'Rejeitada':
+      return { bg: 'rgba(255,107,107,0.14)', text: colors.danger, dot: colors.danger };
     default:
       return { bg: 'rgba(46,175,109,0.15)', text: colors.success, dot: colors.success };
   }
@@ -246,45 +398,292 @@ const getStatusStyle = (status: StatusType) => {
 const getSectionCopy = (activeFilter: DashboardFilter) => {
   if (activeFilter === 'concluidas') {
     return {
-      title: 'VISITAS CONCLUIDAS',
-      description: 'Historico das propriedades ja visitadas por voce',
-      action: 'Historico',
+      title: 'VISITAS CONCLUÍDAS',
+      description: 'Histórico das propriedades já visitadas por você',
+      action: 'Histórico',
     };
   }
 
   if (activeFilter === 'hoje') {
     return {
       title: 'VISITAS DE HOJE',
-      description: 'Propriedades que precisam ser atendidas hoje',
+      description: 'Propriedades atribuídas com atividade prevista para hoje',
       action: 'Rota',
     };
   }
 
   return {
-    title: 'PROPRIEDADES ATRIBUIDAS',
-    description: 'Proximas propriedades que voce precisa visitar',
+    title: 'PROPRIEDADES ATRIBUÍDAS',
+    description: 'Propriedades vinculadas ao seu usuário no momento',
     action: 'Agenda',
   };
 };
 
 export default function DashboardScreen() {
+  const { profile, user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>('atribuidas');
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarStoragePath, setAvatarStoragePath] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [assignedItems, setAssignedItems] = useState<DashboardItem[]>([]);
+  const [completedItems, setCompletedItems] = useState<DashboardItem[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    atribuidas: '0',
+    hoje: '0',
+    concluidas: '0',
+  });
+
+  const loadDashboard = useCallback(async () => {
+    const currentUserId = profile?.id ?? user?.id;
+
+    if (!currentUserId) {
+      setAssignedItems([]);
+      setCompletedItems([]);
+      setStats({ atribuidas: '0', hoje: '0', concluidas: '0' });
+      setIsLoading(false);
+      return;
+    }
+
+    setErrorMessage('');
+
+    const [atribuicoesRes, visitasRes] = await Promise.all([
+      supabase
+        .from('atribuicoes')
+        .select('id, id_propriedade, ativa, atualizado_em, criado_em')
+        .eq('id_instrutor', currentUserId)
+        .eq('ativa', true)
+        .order('atualizado_em', { ascending: false }),
+      supabase
+        .from('visitas')
+        .select('id, id_propriedade, criado_em, status_visita')
+        .eq('id_instrutor', currentUserId)
+        .order('criado_em', { ascending: false })
+        .limit(20),
+    ]);
+
+    if (atribuicoesRes.error) {
+      throw atribuicoesRes.error;
+    }
+
+    if (visitasRes.error) {
+      throw visitasRes.error;
+    }
+
+    const atribuicoes = (atribuicoesRes.data ?? []) as AtribuicaoDashboardRow[];
+    const visitas = (visitasRes.data ?? []) as VisitaDashboardRow[];
+    const latestVisitByProperty = visitas.reduce<Record<number, VisitaDashboardRow>>((acc, visit) => {
+      if (visit.id_propriedade == null) {
+        return acc;
+      }
+
+      if (!acc[visit.id_propriedade]) {
+        acc[visit.id_propriedade] = visit;
+      }
+
+      return acc;
+    }, {});
+    const propertyIds = Array.from(
+      new Set(
+        [...atribuicoes.map((item) => item.id_propriedade), ...visitas.map((item) => item.id_propriedade)].filter(
+          (value): value is number => typeof value === 'number'
+        )
+      )
+    );
+
+    let propertyLookup: PropertyLookup = {};
+
+    if (propertyIds.length > 0) {
+      const { data: propertiesData, error: propertiesError } = await supabase
+        .from('propriedades')
+        .select('id, nome, municipio_nome, uf')
+        .in('id', propertyIds);
+
+      if (propertiesError) {
+        throw propertiesError;
+      }
+
+      propertyLookup = (propertiesData ?? []).reduce<PropertyLookup>((acc, property) => {
+        acc[property.id] = property;
+        return acc;
+      }, {});
+    }
+
+    const atribuidas = atribuicoes
+      .filter((item) => !latestVisitByProperty[item.id_propriedade])
+      .map((item, index) => buildAssignmentItem(item, propertyLookup, index, null));
+    const concluidas = Object.values(latestVisitByProperty).map((item, index) =>
+      buildVisitItem(item, propertyLookup, index)
+    );
+    const hojeCount = atribuidas.filter((item) => item.status === 'Hoje' || item.status === 'Em andamento').length;
+
+    setAssignedItems(atribuidas);
+    setCompletedItems(concluidas);
+    setStats({
+      atribuidas: String(atribuidas.length),
+      hoje: String(hojeCount),
+      concluidas: String(concluidas.length),
+    });
+  }, [profile?.id, user?.id]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function run() {
+      setIsLoading(true);
+      try {
+        await loadDashboard();
+      } catch (error) {
+        console.error('Erro ao carregar painel do instrutor:', error);
+        if (mounted) {
+          setErrorMessage('Não foi possível carregar suas atribuições agora.');
+          setAssignedItems([]);
+          setCompletedItems([]);
+          setStats({ atribuidas: '0', hoje: '0', concluidas: '0' });
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    run();
+
+    return () => {
+      mounted = false;
+    };
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const currentUserId = profile?.id ?? user?.id;
+
+    if (!currentUserId) {
+      return;
+    }
+
+    const userId = currentUserId;
+
+    let cancelled = false;
+
+    async function hydrateAvatarPath() {
+      try {
+        const savedPath = await AsyncStorage.getItem(getAvatarStorageKey(userId));
+
+        if (!cancelled && savedPath) {
+          setAvatarStoragePath(savedPath);
+        }
+      } catch (error) {
+        console.error('Erro ao restaurar avatar do dashboard:', error);
+      }
+    }
+
+    hydrateAvatarPath();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveAvatar() {
+      const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
+
+      if (!sourcePath) {
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.storage.from('avatares').createSignedUrl(sourcePath, 60 * 60);
+
+        if (!cancelled && !error && data?.signedUrl) {
+          setAvatarUrl(`${data.signedUrl}${data.signedUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
+          return;
+        }
+      } catch (error) {
+        console.error('Erro ao resolver avatar do dashboard:', error);
+      }
+
+      if (!cancelled) {
+        const fallbackUrl = profile?.fotoUrl && profile.fotoUrl.startsWith('http')
+          ? profile.fotoUrl
+          : supabase.storage.from('avatares').getPublicUrl(sourcePath).data.publicUrl;
+        setAvatarUrl(`${fallbackUrl}${fallbackUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
+      }
+    }
+
+    resolveAvatar();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [avatarStoragePath, profile?.fotoUrl]);
+
+  useEffect(() => {
+    const currentUserId = profile?.id ?? user?.id;
+
+    if (!currentUserId) {
+      return;
+    }
+
+    const userId = currentUserId;
+
+    const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
+
+    if (!sourcePath) {
+      return;
+    }
+
+    setAvatarStoragePath(sourcePath);
+    AsyncStorage.setItem(getAvatarStorageKey(userId), sourcePath).catch((error) => {
+      console.error('Erro ao persistir avatar do dashboard:', error);
+    });
+  }, [avatarStoragePath, profile?.fotoUrl, profile?.id, user?.id]);
 
   const filteredProperties = useMemo(() => {
     if (activeFilter === 'concluidas') {
-      return PROPRIEDADES.filter((item) => item.status === 'Concluida');
+      return completedItems;
     }
 
     if (activeFilter === 'hoje') {
-      return PROPRIEDADES.filter((item) => item.status === 'Hoje');
+      return assignedItems.filter((item) => item.status === 'Hoje' || item.status === 'Em andamento');
     }
 
-    return PROPRIEDADES.filter((item) => item.status !== 'Concluida');
-  }, [activeFilter]);
+    return assignedItems;
+  }, [activeFilter, assignedItems, completedItems]);
 
   const sectionCopy = getSectionCopy(activeFilter);
+  const displayName = useMemo(
+    () => profile?.nomeCompleto ?? user?.user_metadata?.nome_completo ?? 'Instrutor',
+    [profile?.nomeCompleto, user?.user_metadata]
+  );
 
-  const renderItem = ({ item }: { item: Propriedade }) => {
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadDashboard();
+    } catch (error) {
+      console.error('Erro ao atualizar painel do instrutor:', error);
+      setErrorMessage('Não foi possível atualizar seus dados agora.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const statCards = useMemo(
+    () =>
+      [
+        { id: 'atribuidas', label: 'Atribuídas', value: stats.atribuidas },
+        { id: 'hoje', label: 'Hoje', value: stats.hoje },
+        { id: 'concluidas', label: 'Concluídas', value: stats.concluidas },
+      ] as const,
+    [stats]
+  );
+
+  const renderItem = ({ item }: { item: DashboardItem }) => {
     const statusStyle = getStatusStyle(item.status);
 
     return (
@@ -318,11 +717,11 @@ export default function DashboardScreen() {
       <View style={styles.hero}>
         <View style={styles.skyGrad1} />
         <View style={styles.skyGrad2} />
-        
+
         {STARS.map((star) => (
           <AnimatedStar key={star.id} star={star} />
         ))}
-        
+
         {FIREFLIES.map((firefly) => (
           <Firefly key={firefly.id} {...firefly} />
         ))}
@@ -340,15 +739,19 @@ export default function DashboardScreen() {
         <View style={styles.heroTop}>
           <View>
             <Text style={styles.greeting}>Bom dia,</Text>
-            <Text style={styles.userName}>Joao Silva</Text>
+            <Text style={styles.userName}>{displayName}</Text>
           </View>
           <TouchableOpacity activeOpacity={0.9} style={styles.avatar}>
-            <Ionicons name="person" size={22} color="#fff" />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} contentFit="cover" />
+            ) : (
+              <Ionicons name="person" size={22} color="#fff" />
+            )}
           </TouchableOpacity>
         </View>
 
         <View style={styles.statsRow}>
-          {STATS.map((item) => {
+          {statCards.map((item) => {
             const isActive = item.id === activeFilter;
 
             return (
@@ -356,12 +759,9 @@ export default function DashboardScreen() {
                 key={item.label}
                 activeOpacity={0.9}
                 onPress={() => setActiveFilter(item.id)}
-                style={[
-                  styles.statBox,
-                  isActive && styles.statBoxActive,
-                ]}>
+                style={[styles.statBox, isActive && styles.statBoxActive]}>
                 <View style={[styles.statIndicator, isActive && styles.statIndicatorActive]} />
-                <Text style={styles.statNumber}>{item.value}</Text>
+                <Text style={styles.statNumber}>{isLoading ? '...' : item.value}</Text>
                 <Text style={styles.statLabel}>{item.label}</Text>
               </TouchableOpacity>
             );
@@ -380,22 +780,43 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        <FlatList
-          data={filteredProperties}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="clipboard-outline" size={28} color={THEME.textGray} />
-              <Text style={styles.emptyTitle}>Nenhuma visita encontrada</Text>
-              <Text style={styles.emptyDescription}>
-                Quando houver registros nessa categoria, eles vao aparecer aqui.
-              </Text>
-            </View>
-          }
-        />
+        {errorMessage ? (
+          <View style={styles.feedbackCard}>
+            <Ionicons name="alert-circle-outline" size={18} color={THEME.cornYellow} />
+            <Text style={styles.feedbackText}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
+        {isLoading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={THEME.leafLight} size="large" />
+            <Text style={styles.loadingText}>Carregando suas propriedades...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredProperties}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={THEME.leafLight}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="clipboard-outline" size={28} color={THEME.textGray} />
+                <Text style={styles.emptyTitle}>Nenhuma visita encontrada</Text>
+                <Text style={styles.emptyDescription}>
+                  Quando houver registros nessa categoria, eles vão aparecer aqui.
+                </Text>
+              </View>
+            }
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -403,7 +824,13 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: THEME.skyTop },
-  hero: { paddingHorizontal: 24, paddingTop: 22, paddingBottom: 26, overflow: 'hidden', position: 'relative' },
+  hero: {
+    paddingHorizontal: 24,
+    paddingTop: 22,
+    paddingBottom: 26,
+    overflow: 'hidden',
+    position: 'relative',
+  },
   skyGrad1: {
     position: 'absolute',
     top: 0,
@@ -457,11 +884,19 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   greeting: { color: THEME.link, fontSize: 13, marginBottom: 2 },
-  userName: { color: '#fff', fontSize: 28, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
+  userName: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
   avatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
+    overflow: 'hidden',
     backgroundColor: '#A56B3F',
     alignItems: 'center',
     justifyContent: 'center',
@@ -471,6 +906,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 5,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   statsRow: { flexDirection: 'row', gap: 10, zIndex: 10 },
   statBox: {
@@ -494,7 +933,13 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 5,
   },
-  statIndicator: { width: 24, height: 4, borderRadius: 999, backgroundColor: 'transparent', marginBottom: 8 },
+  statIndicator: {
+    width: 24,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'transparent',
+    marginBottom: 8,
+  },
   statIndicatorActive: { backgroundColor: THEME.cornYellow },
   statNumber: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 2 },
   statLabel: { fontSize: 12, color: THEME.link },
@@ -512,10 +957,46 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 16,
   },
-  sectionEyebrow: { color: '#8B8E84', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  sectionEyebrow: {
+    color: '#8B8E84',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
   sectionDescription: { color: colors.textMuted, fontSize: 13, maxWidth: 230 },
-  sectionAction: { backgroundColor: THEME.skyMid, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  sectionAction: {
+    backgroundColor: THEME.skyMid,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
   sectionActionText: { color: THEME.link, fontSize: 12, fontWeight: '700' },
+  feedbackCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(245,200,66,0.12)',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  feedbackText: {
+    flex: 1,
+    color: '#7B6333',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  loadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginTop: 12,
+  },
   listContent: { paddingBottom: 110 },
   card: {
     backgroundColor: colors.card,
@@ -541,7 +1022,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   cardInfo: { flex: 1 },
-  cardTitle: { color: colors.textDark, fontSize: 20, lineHeight: 22, fontWeight: '800', marginBottom: 5 },
+  cardTitle: {
+    color: colors.textDark,
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: '800',
+    marginBottom: 5,
+  },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
   cardSubtitle: { color: colors.textMuted, fontSize: 13, flexShrink: 1 },
   visitDate: { color: THEME.skyMid, fontSize: 13, fontWeight: '700', marginBottom: 8 },
@@ -557,6 +1044,17 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 11, fontWeight: '800' },
   badgeDot: { width: 8, height: 8, borderRadius: 999 },
   emptyState: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 },
-  emptyTitle: { color: colors.textDark, fontSize: 16, fontWeight: '700', marginTop: 12, marginBottom: 4 },
-  emptyDescription: { color: colors.textMuted, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  emptyTitle: {
+    color: colors.textDark,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyDescription: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
 });
