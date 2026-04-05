@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   SafeAreaView,
   ScrollView,
@@ -10,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -23,6 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { colors } from '@/src/theme/colors';
+import { supabase } from '@/src/lib/supabase';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -39,13 +41,39 @@ const THEME = {
   link: '#7de88a',
 };
 
-const CRITERIOS = [
-  { id: '1', titulo: 'Distancia da propriedade', descricao: '87 metros - dentro do raio permitido (200m)', progresso: 0.92, icon: 'location', cor: THEME.leafLight, status: 'ok' },
-  { id: '2', titulo: 'Coerencia do IP', descricao: 'IP de Ribeirao Preto, SP - compativel', progresso: 0.84, icon: 'globe-outline', cor: colors.info, status: 'ok' },
-  { id: '3', titulo: 'Padrao de deslocamento', descricao: 'Trajetoria coerente - sem saltos suspeitos', progresso: 0.88, icon: 'car-sport-outline', cor: THEME.cornYellow, status: 'ok' },
-  { id: '4', titulo: 'Indicadores de VPN', descricao: 'Nenhum indicio detectado', progresso: 0.91, icon: 'lock-closed-outline', cor: THEME.leafLight, status: 'ok' },
-  { id: '5', titulo: 'Data e hora dos metadados', descricao: '24/05/2025 09:38 - coerente (+3 min)', progresso: 0.52, icon: 'time-outline', cor: colors.warning, status: 'warning' },
-] as const;
+type VisitRow = {
+  id: number;
+  criado_em: string | null;
+  capturado_em: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  altitude: number | null;
+  id_propriedade: number | null;
+  propriedades:
+    | {
+        id: number;
+        nome: string | null;
+        latitude: number | null;
+        longitude: number | null;
+      }
+    | {
+        id: number;
+        nome: string | null;
+        latitude: number | null;
+        longitude: number | null;
+      }[]
+    | null;
+};
+
+type Criterion = {
+  id: string;
+  titulo: string;
+  descricao: string;
+  progresso: number;
+  icon: keyof typeof Ionicons.glyphMap;
+  cor: string;
+  status: 'ok' | 'warning';
+};
 
 const STARS = Array.from({ length: 25 }, (_, i) => ({
   id: i,
@@ -149,7 +177,425 @@ const FIREFLIES = Array.from({ length: 5 }, (_, i) => ({
   size: 3 + Math.random() * 2,
 }));
 
+function formatDate(value?: string | null) {
+  if (!value) {
+    return '--/--/----';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '--/--/----';
+  }
+
+  return parsed.toLocaleDateString('pt-BR');
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return 'Nao disponivel';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Nao disponivel';
+  }
+
+  return parsed.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function calculateDistanceInMeters(
+  originLat: number,
+  originLon: number,
+  targetLat: number,
+  targetLon: number
+) {
+  const earthRadius = 6371000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const deltaLat = toRadians(targetLat - originLat);
+  const deltaLon = toRadians(targetLon - originLon);
+  const lat1 = toRadians(originLat);
+  const lat2 = toRadians(targetLat);
+
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(earthRadius * c);
+}
+
+function getPropertyRecord(property: VisitRow['propriedades']) {
+  if (Array.isArray(property)) {
+    return property[0] ?? null;
+  }
+
+  return property ?? null;
+}
+
 export default function AvaliadorScreen() {
+  const params = useLocalSearchParams<{ visitId?: string; propertyId?: string }>();
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [visit, setVisit] = useState<VisitRow | null>(null);
+  const [analysisSaveError, setAnalysisSaveError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadVisit() {
+      if (!params.visitId) {
+        setErrorMessage('Visita nao encontrada para analise.');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setErrorMessage('');
+
+        const { data, error } = await supabase
+          .from('visitas')
+          .select(
+            'id, criado_em, capturado_em, latitude, longitude, altitude, id_propriedade, propriedades(id, nome, latitude, longitude)'
+          )
+          .eq('id', Number(params.visitId))
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        if (mounted) {
+          setVisit(data as VisitRow);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar avaliacao da visita:', error);
+        if (mounted) {
+          setErrorMessage('Nao foi possivel carregar os dados da visita.');
+          setVisit(null);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadVisit();
+
+    return () => {
+      mounted = false;
+    };
+  }, [params.visitId]);
+
+  const property = useMemo(() => getPropertyRecord(visit?.propriedades ?? null), [visit?.propriedades]);
+
+  const distanceMeters = useMemo(() => {
+    if (
+      visit?.latitude == null ||
+      visit.longitude == null ||
+      property?.latitude == null ||
+      property.longitude == null
+    ) {
+      return null;
+    }
+
+    return calculateDistanceInMeters(visit.latitude, visit.longitude, property.latitude, property.longitude);
+  }, [property?.latitude, property?.longitude, visit?.latitude, visit?.longitude]);
+
+  const timeDifferenceMinutes = useMemo(() => {
+    if (!visit?.criado_em || !visit.capturado_em) {
+      return null;
+    }
+
+    const createdAt = new Date(visit.criado_em).getTime();
+    const capturedAt = new Date(visit.capturado_em).getTime();
+
+    if (Number.isNaN(createdAt) || Number.isNaN(capturedAt)) {
+      return null;
+    }
+
+    return Math.round(Math.abs(createdAt - capturedAt) / 60000);
+  }, [visit?.capturado_em, visit?.criado_em]);
+
+  const score = useMemo(() => {
+    let nextScore = 100;
+
+    if (distanceMeters == null) {
+      nextScore -= 55;
+    } else if (distanceMeters <= 200) {
+      nextScore -= 0;
+    } else if (distanceMeters <= 1000) {
+      nextScore -= 25;
+    } else if (distanceMeters <= 5000) {
+      nextScore -= 45;
+    } else {
+      nextScore -= 65;
+    }
+
+    if (timeDifferenceMinutes == null) {
+      nextScore -= 10;
+    } else if (timeDifferenceMinutes <= 10) {
+      nextScore -= 0;
+    } else if (timeDifferenceMinutes <= 60) {
+      nextScore -= 10;
+    } else {
+      nextScore -= 20;
+    }
+
+    return Math.max(0, Math.min(100, nextScore));
+  }, [distanceMeters, timeDifferenceMinutes]);
+
+  const reliability = useMemo(() => {
+    if (score >= 80) {
+      return {
+        headline: 'Alta Confiabilidade',
+        description: 'A visita esta coerente com a localizacao da propriedade e sem sinais fortes de divergencia.',
+        badge: 'Localizacao valida',
+        color: THEME.leafLight,
+      };
+    }
+
+    if (score >= 50) {
+      return {
+        headline: 'Confiabilidade Moderada',
+        description: 'A visita possui sinais de atencao e precisa de revisao antes de ser considerada valida.',
+        badge: 'Revisao recomendada',
+        color: colors.warning,
+      };
+    }
+
+    return {
+      headline: 'Baixa Confiabilidade',
+      description: 'A evidencia esta distante da propriedade ou sem metadados suficientes para validar a presenca.',
+      badge: 'Alta suspeita',
+        color: colors.danger,
+    };
+  }, [score]);
+
+  const scoreDistance = useMemo(() => {
+    if (distanceMeters == null) {
+      return 15;
+    }
+
+    if (distanceMeters <= 200) {
+      return 100;
+    }
+
+    if (distanceMeters <= 1000) {
+      return 75;
+    }
+
+    if (distanceMeters <= 5000) {
+      return 45;
+    }
+
+    return 20;
+  }, [distanceMeters]);
+
+  const scoreExifTimestamp = useMemo(() => {
+    if (timeDifferenceMinutes == null) {
+      return 55;
+    }
+
+    if (timeDifferenceMinutes <= 10) {
+      return 100;
+    }
+
+    if (timeDifferenceMinutes <= 60) {
+      return 75;
+    }
+
+    return 45;
+  }, [timeDifferenceMinutes]);
+
+  const classification = useMemo<'valida' | 'suspeita' | 'alto_risco_vpn'>(() => {
+    if (score >= 80) {
+      return 'valida';
+    }
+
+    return 'suspeita';
+  }, [score]);
+
+  const criteria = useMemo<Criterion[]>(() => {
+    const distanceDescription =
+      distanceMeters == null
+        ? 'Foto sem coordenadas GPS para comparar com a propriedade.'
+        : distanceMeters <= 200
+          ? `${distanceMeters} m da propriedade - dentro do raio permitido.`
+          : distanceMeters < 1000
+            ? `${distanceMeters} m da propriedade - fora do raio esperado.`
+            : `${(distanceMeters / 1000).toFixed(2)} km da propriedade - muito distante.`;
+
+    const distanceProgress =
+      distanceMeters == null
+        ? 0.12
+        : distanceMeters <= 200
+          ? 0.96
+          : distanceMeters <= 1000
+            ? 0.45
+            : 0.12;
+
+    const timeDescription =
+      timeDifferenceMinutes == null
+        ? 'Nao foi possivel comparar o horario da foto com o envio.'
+        : `${formatDateTime(visit?.capturado_em)} - diferenca de ${timeDifferenceMinutes} min para o envio.`;
+
+    const timeProgress =
+      timeDifferenceMinutes == null
+        ? 0.35
+        : timeDifferenceMinutes <= 10
+          ? 0.92
+          : timeDifferenceMinutes <= 60
+            ? 0.58
+            : 0.3;
+
+    const metadataDescription =
+      visit?.latitude != null && visit.longitude != null
+        ? `GPS extraido com sucesso (${visit.latitude.toFixed(5)}, ${visit.longitude.toFixed(5)}).`
+        : 'A foto enviada nao trouxe latitude/longitude nos metadados.';
+
+    return [
+      {
+        id: '1',
+        titulo: 'Distancia da propriedade',
+        descricao: distanceDescription,
+        progresso: distanceProgress,
+        icon: 'location',
+        cor: distanceMeters != null && distanceMeters <= 200 ? THEME.leafLight : colors.warning,
+        status: distanceMeters != null && distanceMeters <= 200 ? 'ok' : 'warning',
+      },
+      {
+        id: '2',
+        titulo: 'Metadados da foto',
+        descricao: metadataDescription,
+        progresso: visit?.latitude != null && visit.longitude != null ? 0.95 : 0.15,
+        icon: 'image-outline',
+        cor: visit?.latitude != null && visit.longitude != null ? colors.info : colors.warning,
+        status: visit?.latitude != null && visit.longitude != null ? 'ok' : 'warning',
+      },
+      {
+        id: '3',
+        titulo: 'Data e hora da captura',
+        descricao: timeDescription,
+        progresso: timeProgress,
+        icon: 'time-outline',
+        cor: timeDifferenceMinutes != null && timeDifferenceMinutes <= 10 ? THEME.leafLight : colors.warning,
+        status: timeDifferenceMinutes != null && timeDifferenceMinutes <= 10 ? 'ok' : 'warning',
+      },
+    ];
+  }, [distanceMeters, timeDifferenceMinutes, visit?.capturado_em, visit?.latitude, visit?.longitude]);
+
+  const infoText = useMemo(() => {
+    if (distanceMeters == null) {
+      return 'A foto nao trouxe GPS no EXIF. Para validar a presenca com mais seguranca, use uma foto original da camera com localizacao ativa.';
+    }
+
+    if (distanceMeters <= 200) {
+      return 'A localizacao da foto esta dentro do raio esperado para a propriedade vinculada.';
+    }
+
+    return 'A foto foi capturada longe da propriedade vinculada. O score caiu para refletir essa divergencia.';
+  }, [distanceMeters]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function persistAnalysis() {
+      if (!visit?.id || isLoading || errorMessage) {
+        return;
+      }
+
+      try {
+        setAnalysisSaveError('');
+
+        const details = {
+          propriedade_nome: property?.nome ?? null,
+          distancia_metros: distanceMeters,
+          diferenca_tempo_minutos: timeDifferenceMinutes,
+          possui_gps: visit.latitude != null && visit.longitude != null,
+          capturado_em: visit.capturado_em,
+          criado_em: visit.criado_em,
+          resumo: infoText,
+          criterios: criteria.map((item) => ({
+            id: item.id,
+            titulo: item.titulo,
+            descricao: item.descricao,
+            progresso: item.progresso,
+            status: item.status,
+          })),
+        };
+
+        const payload = {
+          id_visita: visit.id,
+          score_total: score,
+          classificacao: classification,
+          score_distancia: scoreDistance,
+          score_exif_timestamp: scoreExifTimestamp,
+          score_ip_regiao: 100,
+          score_deslocamento: distanceMeters != null && distanceMeters <= 200 ? 100 : 55,
+          score_vpn: 100,
+          distancia_calculada_metros: distanceMeters,
+          vpn_detectada: false,
+          exif_consistente: visit.latitude != null && visit.longitude != null,
+          detalhes: details,
+          analisado_em: new Date().toISOString(),
+        };
+
+        const { data: existingAnalysis, error: existingError } = await supabase
+          .from('analises_antifraude')
+          .select('id')
+          .eq('id_visita', visit.id)
+          .maybeSingle();
+
+        if (existingError) {
+          throw existingError;
+        }
+
+        const query = existingAnalysis?.id
+          ? supabase.from('analises_antifraude').update(payload).eq('id', existingAnalysis.id)
+          : supabase.from('analises_antifraude').insert(payload);
+
+        const { error: saveError } = await query;
+
+        if (saveError) {
+          throw saveError;
+        }
+      } catch (error) {
+        console.error('Erro ao salvar analise antifraude:', error);
+        if (mounted) {
+          setAnalysisSaveError('A analise foi calculada, mas nao foi possivel salvar o resultado no banco.');
+        }
+      }
+    }
+
+    persistAnalysis();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    classification,
+    criteria,
+    distanceMeters,
+    errorMessage,
+    infoText,
+    isLoading,
+    property?.nome,
+    score,
+    scoreDistance,
+    scoreExifTimestamp,
+    timeDifferenceMinutes,
+    visit?.capturado_em,
+    visit?.criado_em,
+    visit?.id,
+    visit?.latitude,
+    visit?.longitude,
+  ]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
@@ -188,23 +634,33 @@ export default function AvaliadorScreen() {
           <View style={styles.heroHeader}>
             <View style={styles.heroCopy}>
               <Text style={styles.heroTitle}>Analise de Autenticidade</Text>
-              <Text style={styles.heroSubtitle}>Fazenda Santa Clara - 24/05/2025</Text>
+              <Text style={styles.heroSubtitle}>
+                {(property?.nome ?? 'Propriedade vinculada')} - {formatDate(visit?.criado_em)}
+              </Text>
             </View>
           </View>
 
           <View style={styles.scoreRow}>
             <View style={styles.scoreRing}>
               <View style={styles.scoreRingInner}>
-                <Text style={styles.scoreValue}>94</Text>
+                <Text style={styles.scoreValue}>{isLoading ? '--' : score}</Text>
               </View>
             </View>
 
             <View style={styles.scoreMeta}>
-              <Text style={styles.scoreHeadline}>Alta Confiabilidade</Text>
-              <Text style={styles.scoreDescription}>Localizacao verificada com sucesso e sem sinais relevantes de fraude.</Text>
-              <View style={styles.validBadge}>
-                <Ionicons name="checkmark-circle" size={16} color={THEME.leafLight} />
-                <Text style={styles.validBadgeText}>Localizacao Valida</Text>
+              <Text style={styles.scoreHeadline}>{isLoading ? 'Carregando analise' : reliability.headline}</Text>
+              <Text style={styles.scoreDescription}>
+                {isLoading ? 'Buscando os dados reais da visita e comparando com a propriedade.' : reliability.description}
+              </Text>
+              <View style={[styles.validBadge, { borderColor: `${reliability.color}55` }]}>
+                <Ionicons
+                  name={!isLoading && score >= 80 ? 'checkmark-circle' : 'warning-outline'}
+                  size={16}
+                  color={reliability.color}
+                />
+                <Text style={[styles.validBadgeText, { color: reliability.color }]}>
+                  {isLoading ? 'Aguardando dados' : reliability.badge}
+                </Text>
               </View>
             </View>
           </View>
@@ -213,43 +669,66 @@ export default function AvaliadorScreen() {
         <View style={styles.sheet}>
           <Text style={styles.sectionTitle}>CRITERIOS DE ANALISE</Text>
 
-          {CRITERIOS.map((criterio) => (
-            <View key={criterio.id} style={styles.criteriaRow}>
-              <View style={[styles.criteriaIcon, { backgroundColor: `${criterio.cor}20` }]}>
-                <Ionicons name={criterio.icon} size={18} color={criterio.cor} />
-              </View>
-              <View style={styles.criteriaContent}>
-                <View style={styles.criteriaHeader}>
-                  <Text style={styles.criteriaTitle}>{criterio.titulo}</Text>
-                  <Ionicons
-                    name={criterio.status === 'ok' ? 'checkmark' : 'warning-outline'}
-                    size={16}
-                    color={criterio.status === 'ok' ? THEME.leafLight : colors.warning}
-                  />
+          {isLoading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator color={THEME.leafLight} size="large" />
+              <Text style={styles.loadingText}>Carregando dados reais da visita...</Text>
+            </View>
+          ) : errorMessage ? (
+            <View style={styles.infoCard}>
+              <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
+              <Text style={styles.infoText}>{errorMessage}</Text>
+            </View>
+          ) : (
+            <>
+              {criteria.map((criterio) => (
+                <View key={criterio.id} style={styles.criteriaRow}>
+                  <View style={[styles.criteriaIcon, { backgroundColor: `${criterio.cor}20` }]}>
+                    <Ionicons name={criterio.icon} size={18} color={criterio.cor} />
+                  </View>
+                  <View style={styles.criteriaContent}>
+                    <View style={styles.criteriaHeader}>
+                      <Text style={styles.criteriaTitle}>{criterio.titulo}</Text>
+                      <Ionicons
+                        name={criterio.status === 'ok' ? 'checkmark' : 'warning-outline'}
+                        size={16}
+                        color={criterio.status === 'ok' ? THEME.leafLight : colors.warning}
+                      />
+                    </View>
+                    <Text style={styles.criteriaDescription}>{criterio.descricao}</Text>
+                    <View style={styles.track}>
+                      <View
+                        style={[styles.fill, { width: `${criterio.progresso * 100}%`, backgroundColor: criterio.cor }]}
+                      />
+                    </View>
+                  </View>
                 </View>
-                <Text style={styles.criteriaDescription}>{criterio.descricao}</Text>
-                <View style={styles.track}>
-                  <View style={[styles.fill, { width: `${criterio.progresso * 100}%`, backgroundColor: criterio.cor }]} />
+              ))}
+
+              <View style={styles.infoCard}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.warning} />
+                <Text style={styles.infoText}>{infoText}</Text>
+              </View>
+
+              {analysisSaveError ? (
+                <View style={styles.infoCard}>
+                  <Ionicons name="cloud-offline-outline" size={20} color={colors.warning} />
+                  <Text style={styles.infoText}>{analysisSaveError}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryNumber}>{score}</Text>
+                  <Text style={styles.summaryLabel}>Score final</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryNumber}>{criteria.filter((item) => item.status === 'ok').length}/{criteria.length}</Text>
+                  <Text style={styles.summaryLabel}>Crit. verificados</Text>
                 </View>
               </View>
-            </View>
-          ))}
-
-          <View style={styles.infoCard}>
-            <Ionicons name="information-circle-outline" size={20} color={colors.warning} />
-            <Text style={styles.infoText}>Pequena divergencia de 3 minutos entre metadados da foto e horario do envio. Dentro da margem considerada normal.</Text>
-          </View>
-
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryNumber}>94</Text>
-              <Text style={styles.summaryLabel}>Score final</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryNumber}>5/5</Text>
-              <Text style={styles.summaryLabel}>Crit. verificados</Text>
-            </View>
-          </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -314,6 +793,17 @@ const styles = StyleSheet.create({
   validBadgeText: { color: THEME.link, fontSize: 12, fontWeight: '700' },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 18, minHeight: 520 },
   sectionTitle: { color: THEME.skyMid, fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 12 },
+  loadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 28,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginTop: 10,
+    textAlign: 'center',
+  },
   criteriaRow: {
     flexDirection: 'row',
     backgroundColor: colors.card,
