@@ -168,7 +168,12 @@ export default function CadastroUsuarioScreen() {
       perfil: 'instrutor',
       regionalId: null,
     });
-    setFeedback({ type: 'success', message: 'Usuario cadastrado com sucesso.' });
+    setFeedback({
+      type: 'success',
+      message: data.session
+        ? 'Usuario cadastrado com acesso liberado.'
+        : 'Usuario cadastrado, mas o e-mail ainda precisa ser confirmado para liberar o login. Para acesso imediato, use o script administrativo npm run create:user.',
+    });
   };
 
   return (
@@ -188,6 +193,13 @@ export default function CadastroUsuarioScreen() {
           </View>
 
           <View style={styles.card}>
+            <View style={styles.noticeBox}>
+              <FontAwesome6 name="triangle-exclamation" size={14} color={THEME.gold} />
+              <Text style={styles.noticeText}>
+                O cadastro feito pelo app segue a politica de confirmacao de e-mail do Supabase. Se voce precisar liberar o acesso imediatamente, crie o usuario pelo script administrativo com confirmacao automatica.
+              </Text>
+            </View>
+
             <Text style={styles.label}>Nome completo</Text>
             <TextInput
               style={styles.input}
@@ -321,6 +333,25 @@ const styles = StyleSheet.create({
   title: { color: THEME.white, fontSize: 28, fontWeight: '800', marginBottom: 6 },
   subtitle: { color: THEME.textMuted, fontSize: 14, lineHeight: 20 },
   card: { backgroundColor: THEME.cardBg, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: 'rgba(77,200,90,0.15)' },
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(245,200,66,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.28)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 6,
+  },
+  noticeText: {
+    flex: 1,
+    color: THEME.offWhite,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
   label: { color: THEME.offWhite, fontSize: 13, fontWeight: '700', marginBottom: 8, marginTop: 10 },
   input: { backgroundColor: THEME.inputBg, borderWidth: 1, borderColor: THEME.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: THEME.white, fontSize: 14 },
   selectorSection: {

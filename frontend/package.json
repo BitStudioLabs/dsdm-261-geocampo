@@ -5,6 +5,7 @@
   "scripts": {
     "start": "expo start",
     "create:user": "node ./scripts/create-user.js",
+    "confirm:user": "node ./scripts/confirm-user.js",
     "import:properties": "node ./scripts/import-properties-from-sheet.js",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
