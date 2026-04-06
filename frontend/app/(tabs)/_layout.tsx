@@ -27,6 +27,11 @@ export default function TabsLayout() {
 
     if (role === 'admin') {
       router.replace('/(tabs-gestor)');
+      return;
+    }
+
+    if (role === 'proprietario') {
+      router.replace('/(tabs-proprietario)/perfil' as any);
     }
   }, [homeRoute, isAuthenticated, isLoading, role]);
 

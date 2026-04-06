@@ -25,7 +25,7 @@ export default function GestorTabLayout() {
     }
 
     if (role !== 'admin') {
-      router.replace('/(tabs)');
+      router.replace((role === 'proprietario' ? '/(tabs-proprietario)/perfil' : '/(tabs)') as any);
     }
   }, [homeRoute, isAuthenticated, isLoading, role]);
 
