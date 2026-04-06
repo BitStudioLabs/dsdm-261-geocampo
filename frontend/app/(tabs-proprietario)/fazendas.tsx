@@ -34,6 +34,7 @@ type Property = {
   referencia: string | null;
   como_chegar: string | null;
   telefone: string | null;
+  instrutores: string[];
 };
 
 function formatArea(area: number) {
@@ -96,7 +97,51 @@ export default function ProprietarioFazendasScreen() {
       throw error;
     }
 
-    setProperties((data as Property[] | null) ?? []);
+    const baseProperties =
+      ((data as Omit<Property, 'instrutores'>[] | null) ?? []).map((item) => ({
+        ...item,
+        instrutores: [] as string[],
+      }));
+
+    if (!baseProperties.length) {
+      setProperties(baseProperties);
+      return;
+    }
+
+    const { data: assignmentsData, error: assignmentsError } = await supabase
+      .from('atribuicoes')
+      .select('id_propriedade, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
+      .in('id_propriedade', baseProperties.map((item) => item.id))
+      .eq('ativa', true);
+
+    if (assignmentsError) {
+      throw assignmentsError;
+    }
+
+    const instrutoresPorPropriedade = new Map<number, string[]>();
+
+    for (const row of (assignmentsData ?? []) as Array<{
+      id_propriedade: number;
+      usuarios: { nome_completo: string | null } | { nome_completo: string | null }[] | null;
+    }>) {
+      const current = instrutoresPorPropriedade.get(row.id_propriedade) ?? [];
+      const relatedUsers = Array.isArray(row.usuarios) ? row.usuarios : row.usuarios ? [row.usuarios] : [];
+
+      for (const relatedUser of relatedUsers) {
+        if (relatedUser?.nome_completo && !current.includes(relatedUser.nome_completo)) {
+          current.push(relatedUser.nome_completo);
+        }
+      }
+
+      instrutoresPorPropriedade.set(row.id_propriedade, current);
+    }
+
+    setProperties(
+      baseProperties.map((item) => ({
+        ...item,
+        instrutores: instrutoresPorPropriedade.get(item.id) ?? [],
+      }))
+    );
   }, [userId]);
 
   useEffect(() => {
@@ -208,6 +253,15 @@ export default function ProprietarioFazendasScreen() {
                 <InfoBox label="Area total" value={`${formatArea(Number(item.area_total ?? 0))} ha`} />
                 <InfoBox label="Contato" value={item.telefone ?? 'Nao informado'} />
               </View>
+
+              <InfoLine
+                icon="people-outline"
+                text={
+                  item.instrutores.length
+                    ? `Instrutor${item.instrutores.length > 1 ? 'es' : ''}: ${item.instrutores.join(', ')}`
+                    : 'Nenhum instrutor vinculado no momento'
+                }
+              />
 
               <InfoLine icon="location-outline" text={item.bairro ?? 'Bairro/zona nao informado'} />
               <InfoLine icon="flag-outline" text={item.referencia ?? 'Sem referencia cadastrada'} />

@@ -37,6 +37,7 @@ type Property = {
   uf: string | null;
   area_total: number | null;
   status_propriedade: string | null;
+  instrutores: string[];
 };
 
 type DashboardState = {
@@ -101,14 +102,18 @@ export default function ProprietarioHomeScreen() {
       throw propertiesError;
     }
 
-    const properties = (propertiesData as Property[] | null) ?? [];
+    const baseProperties =
+      ((propertiesData as Omit<Property, 'instrutores'>[] | null) ?? []).map((item) => ({
+        ...item,
+        instrutores: [] as string[],
+      }));
     let visitsCount = 0;
 
-    if (properties.length > 0) {
+    if (baseProperties.length > 0) {
       const { count, error: visitsError } = await supabase
         .from('visitas')
         .select('*', { count: 'exact', head: true })
-        .in('id_propriedade', properties.map((item) => item.id));
+        .in('id_propriedade', baseProperties.map((item) => item.id));
 
       if (visitsError) {
         throw visitsError;
@@ -116,6 +121,41 @@ export default function ProprietarioHomeScreen() {
 
       visitsCount = count ?? 0;
     }
+
+    const { data: assignmentsData, error: assignmentsError } = baseProperties.length
+      ? await supabase
+          .from('atribuicoes')
+          .select('id_propriedade, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
+          .in('id_propriedade', baseProperties.map((item) => item.id))
+          .eq('ativa', true)
+      : { data: [], error: null as any };
+
+    if (assignmentsError) {
+      throw assignmentsError;
+    }
+
+    const instrutoresPorPropriedade = new Map<number, string[]>();
+
+    for (const row of (assignmentsData ?? []) as Array<{
+      id_propriedade: number;
+      usuarios: { nome_completo: string | null } | { nome_completo: string | null }[] | null;
+    }>) {
+      const current = instrutoresPorPropriedade.get(row.id_propriedade) ?? [];
+      const relatedUsers = Array.isArray(row.usuarios) ? row.usuarios : row.usuarios ? [row.usuarios] : [];
+
+      for (const relatedUser of relatedUsers) {
+        if (relatedUser?.nome_completo && !current.includes(relatedUser.nome_completo)) {
+          current.push(relatedUser.nome_completo);
+        }
+      }
+
+      instrutoresPorPropriedade.set(row.id_propriedade, current);
+    }
+
+    const properties = baseProperties.map((item) => ({
+      ...item,
+      instrutores: instrutoresPorPropriedade.get(item.id) ?? [],
+    }));
 
     setState({
       producer: producerData as Producer,
@@ -228,6 +268,11 @@ export default function ProprietarioHomeScreen() {
                 </View>
                 <Text style={styles.highlightArea}>{formatArea(Number(lastProperty.area_total ?? 0))} ha</Text>
               </View>
+              <Text style={styles.highlightInstructor}>
+                {lastProperty.instrutores.length
+                  ? `Instrutor responsavel: ${lastProperty.instrutores.join(', ')}`
+                  : 'Nenhum instrutor vinculado no momento'}
+              </Text>
             </View>
           )}
         </View>
@@ -302,6 +347,7 @@ const styles = StyleSheet.create({
   highlightPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: THEME.border },
   highlightPillText: { color: colors.textDark, fontSize: 12, fontWeight: '700' },
   highlightArea: { color: colors.textDark, fontSize: 13, fontWeight: '800' },
+  highlightInstructor: { color: colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 10 },
   linkCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.cardMuted, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: THEME.border, marginTop: 10 },
   linkIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(216,180,91,0.12)' },
   linkCopy: { flex: 1 },
