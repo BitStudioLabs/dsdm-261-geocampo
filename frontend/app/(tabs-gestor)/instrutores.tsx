@@ -19,6 +19,7 @@ import {
   View,
 } from 'react-native';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { supabase } from '@/src/lib/supabase';
 
 const THEME = {
@@ -470,6 +471,7 @@ export default function UsuariosGestaoScreen() {
 
   return (
     <View style={styles.root}>
+      <FeedbackPickup feedback={feedback} />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -778,12 +780,6 @@ export default function UsuariosGestaoScreen() {
                       </View>
                     ) : null}
                   </View>
-
-                  {feedback ? (
-                    <View style={[styles.feedbackBox, feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>
-                      <Text style={styles.feedbackText}>{feedback.message}</Text>
-                    </View>
-                  ) : null}
 
                   <TouchableOpacity
                     style={styles.saveButton}
