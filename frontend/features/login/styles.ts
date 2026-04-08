@@ -178,11 +178,12 @@ export const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   appTagline: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.link,
-    letterSpacing: 2,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
-    opacity: 0.85,
+    opacity: 0.9,
+    textAlign: 'center',
   },
   card: {
     backgroundColor: COLORS.cardBg,
@@ -196,6 +197,21 @@ export const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 15,
     marginBottom: 18,
+  },
+  cardHeader: {
+    marginBottom: 18,
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.white,
+    marginBottom: 6,
+    letterSpacing: -0.4,
+  },
+  cardDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.textGray,
   },
   fieldGroup: {
     marginBottom: 18,
@@ -285,6 +301,11 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  btnLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   forgotBtn: {
     alignItems: 'center',
     marginTop: 18,
@@ -311,16 +332,18 @@ export const styles = StyleSheet.create({
   dividerText: {
     color: COLORS.textGray,
     fontSize: 11,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   profileBadge: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     borderRadius: 16,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 14,
   },
   avatarBox: {
@@ -331,16 +354,20 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  badgeCopy: {
+    flex: 1,
+  },
   badgeName: {
     color: COLORS.white,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   badgeRole: {
-    color: COLORS.link,
+    color: COLORS.offWhite,
     fontSize: 11,
-    opacity: 0.75,
-    letterSpacing: 0.5,
-    marginTop: 2,
+    opacity: 0.8,
+    letterSpacing: 0.3,
+    marginTop: 3,
+    lineHeight: 15,
   },
 });

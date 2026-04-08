@@ -16,9 +16,9 @@ export function ProfileBadge({ animatedStyle }: ProfileBadgeProps) {
       <View style={styles.avatarBox}>
         <FontAwesome6 name="user-tie" size={20} color={COLORS.white} />
       </View>
-      <View>
-        <Text style={styles.badgeName}>Instrutor de Campo</Text>
-        <Text style={styles.badgeRole}>Regiao Sul - PR</Text>
+      <View style={styles.badgeCopy}>
+        <Text style={styles.badgeName}>Perfis suportados</Text>
+        <Text style={styles.badgeRole}>Gestor, Instrutor e Proprietario</Text>
       </View>
     </Animated.View>
   );

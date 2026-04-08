@@ -16,6 +16,11 @@ interface LoginFormCardProps {
 export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFormCardProps) {
   return (
     <Animated.View style={[styles.card, animatedStyle]}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.cardTitle}>Entrar no GeoCampo</Text>
+        <Text style={styles.cardDescription}>Use seu e-mail e senha cadastrados.</Text>
+      </View>
+
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>E-mail</Text>
         <View style={[styles.inputWrapper, form.emailFocused && styles.inputWrapperFocused]}>
@@ -30,9 +35,11 @@ export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFo
             placeholderTextColor={COLORS.textGray}
             keyboardType="email-address"
             autoCapitalize="none"
+            autoCorrect={false}
             autoComplete="email"
             returnKeyType="next"
             selectionColor={COLORS.leafLight}
+            editable={!form.loading}
           />
         </View>
       </View>
@@ -51,12 +58,15 @@ export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFo
             placeholderTextColor={COLORS.textGray}
             secureTextEntry={!form.showPass}
             autoComplete="password"
+            autoCorrect={false}
             returnKeyType="done"
             onSubmitEditing={form.handleLogin}
             selectionColor={COLORS.leafLight}
+            editable={!form.loading}
           />
           <TouchableOpacity
             onPress={form.toggleShowPass}
+            disabled={form.loading}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <FontAwesome6
               name={form.showPass ? 'eye-slash' : 'eye'}
@@ -85,24 +95,29 @@ export function LoginFormCard({ animatedStyle, form, onForgotPassword }: LoginFo
         activeOpacity={0.82}
         disabled={form.loading}>
         {form.loading ? (
-          <ActivityIndicator color={COLORS.white} size="small" />
+          <View style={styles.btnLoadingRow}>
+            <ActivityIndicator color={COLORS.white} size="small" />
+            <Text style={styles.btnText}>Entrando...</Text>
+          </View>
         ) : (
           <Text style={styles.btnText}>Entrar no Sistema</Text>
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity
-        onPress={onForgotPassword}
-        style={styles.forgotBtn}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Text style={styles.forgotText}>
-          Esqueceu a senha? <Text style={styles.forgotLink}>Recuperar acesso</Text>
-        </Text>
-      </TouchableOpacity>
+      {onForgotPassword ? (
+        <TouchableOpacity
+          onPress={onForgotPassword}
+          style={styles.forgotBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.forgotText}>
+            Esqueceu a senha? <Text style={styles.forgotLink}>Recuperar acesso</Text>
+          </Text>
+        </TouchableOpacity>
+      ) : null}
 
       <View style={styles.divider}>
         <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>v1.0</Text>
+        <Text style={styles.dividerText}>Senar-TO</Text>
         <View style={styles.dividerLine} />
       </View>
     </Animated.View>

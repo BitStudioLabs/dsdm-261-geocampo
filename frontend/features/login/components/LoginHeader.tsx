@@ -17,7 +17,7 @@ export function LoginHeader({ animatedStyle }: LoginHeaderProps) {
         <FontAwesome6 name="wheat-awn" size={34} color={COLORS.white} />
       </View>
       <Text style={styles.appName}>GeoCampo</Text>
-      <Text style={styles.appTagline}>Gestao Rural de Campo</Text>
+      <Text style={styles.appTagline}>Acesso ao sistema</Text>
     </Animated.View>
   );
 }
