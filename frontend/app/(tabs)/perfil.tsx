@@ -360,7 +360,7 @@ export default function PerfilScreen() {
     let cancelled = false;
 
     async function resolveAvatar() {
-      const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
+      const sourcePath = profile?.fotoPath ?? (profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath);
 
       if (!sourcePath) {
         setAvatarUrl((current) => current ?? null);
@@ -379,9 +379,10 @@ export default function PerfilScreen() {
       }
 
       if (!cancelled) {
-        const fallbackUrl = profile?.fotoUrl && profile.fotoUrl.startsWith('http')
-          ? profile.fotoUrl
-          : supabase.storage.from('avatares').getPublicUrl(sourcePath).data.publicUrl;
+        const fallbackUrl =
+          profile?.fotoUrl && profile.fotoUrl.startsWith('http')
+            ? profile.fotoUrl
+            : supabase.storage.from('avatares').getPublicUrl(sourcePath).data.publicUrl;
         setAvatarUrl(`${fallbackUrl}${fallbackUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
       }
     }
@@ -391,7 +392,7 @@ export default function PerfilScreen() {
     return () => {
       cancelled = true;
     };
-  }, [avatarStoragePath, profile?.fotoUrl]);
+  }, [avatarStoragePath, profile?.fotoPath, profile?.fotoUrl]);
 
   useEffect(() => {
     const currentUserId = profile?.id ?? user?.id;
@@ -402,7 +403,7 @@ export default function PerfilScreen() {
 
     const userId = currentUserId;
 
-    const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
+    const sourcePath = profile?.fotoPath ?? (profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath);
 
     if (!sourcePath) {
       return;
@@ -412,7 +413,7 @@ export default function PerfilScreen() {
     AsyncStorage.setItem(getAvatarStorageKey(userId), sourcePath).catch((error) => {
       console.error('Erro ao persistir avatar localmente:', error);
     });
-  }, [avatarStoragePath, profile?.fotoUrl, profile?.id, user?.id]);
+  }, [avatarStoragePath, profile?.fotoPath, profile?.fotoUrl, profile?.id, user?.id]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -508,16 +509,23 @@ export default function PerfilScreen() {
 
       const { data } = supabase.storage.from('avatares').getPublicUrl(filePath);
 
-      const { error: updateError } = await supabase
+      const { data: persistedProfile, error: updateError } = await supabase
         .from('usuarios')
         .update({
           foto_url: data.publicUrl,
+          foto_path: filePath,
           atualizado_em: new Date().toISOString(),
         })
-        .eq('id', currentUserId);
+        .eq('id', currentUserId)
+        .select('foto_url, foto_path')
+        .single();
 
       if (updateError) {
         throw updateError;
+      }
+
+      if (!persistedProfile?.foto_path) {
+        throw new Error('A foto foi enviada, mas o campo foto_path não foi persistido no banco.');
       }
 
       const { data: signedData } = await supabase.storage.from('avatares').createSignedUrl(filePath, 60 * 60);
