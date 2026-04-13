@@ -1,5 +1,6 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -256,32 +257,52 @@ export default function PerfilGestorScreen() {
     setFeedback(null);
 
     try {
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
       const extension = asset.fileName?.split('.').pop()?.toLowerCase() || 'jpg';
       const filePath = `${profile.id}/avatar-${Date.now()}.${extension}`;
 
-      const { error: uploadError } = await supabase.storage.from('avatares').upload(filePath, blob, {
-        upsert: true,
-        contentType: asset.mimeType ?? 'image/jpeg',
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('Sessão inválida para enviar a foto de perfil.');
+      }
+
+      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/avatares/${filePath}`;
+      const uploadResponse = await FileSystem.uploadAsync(uploadUrl, asset.uri, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '',
+          'Content-Type': asset.mimeType ?? 'image/jpeg',
+          'x-upsert': 'true',
+        },
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       });
 
-      if (uploadError) {
-        throw uploadError;
+      if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
+        throw new Error(uploadResponse.body || 'Não foi possível enviar a foto para o bucket.');
       }
 
       const { data } = supabase.storage.from('avatares').getPublicUrl(filePath);
 
-      const { error: updateError } = await supabase
+      const { data: persistedProfile, error: updateError } = await supabase
         .from('usuarios')
         .update({
           foto_url: data.publicUrl,
+          foto_path: filePath,
           atualizado_em: new Date().toISOString(),
         })
-        .eq('id', profile.id);
+        .eq('id', profile.id)
+        .select('foto_url, foto_path')
+        .single();
 
       if (updateError) {
         throw updateError;
+      }
+
+      if (!persistedProfile?.foto_path) {
+        throw new Error('A foto foi enviada, mas o campo foto_path não foi persistido no banco.');
       }
 
       setForm((current) => ({
