@@ -37,12 +37,17 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const THEME = {
   skyTop: '#0a1f0d',
   skyMid: '#0f2e14',
+  page: '#06180a',
+  panel: '#0f2116',
+  panelStrong: '#102719',
+  panelSoft: '#132d1c',
   starColor: 'rgba(255,255,255,0.8)',
   leafLight: '#4dc85a',
   cornYellow: '#f5c842',
   cardBg: 'rgba(10,31,13,0.85)',
   cardBorder: 'rgba(77,200,90,0.2)',
   textGray: 'rgba(255,255,255,0.55)',
+  textSoft: 'rgba(240,247,241,0.72)',
   link: '#7de88a',
 };
 
@@ -415,6 +420,21 @@ function mapVisitStatusToHistoryLabel(status?: VisitStatusDb): VisitHistoryItem[
   }
 
   return 'Enviada';
+}
+
+function getHistoryStatusStyle(status: VisitHistoryItem['status']) {
+  switch (status) {
+    case 'Aprovada':
+      return { bg: 'rgba(56,211,159,0.14)', text: '#2aa774' };
+    case 'Rejeitada':
+      return { bg: 'rgba(255,125,125,0.14)', text: '#d85a5a' };
+    case 'Em análise':
+      return { bg: 'rgba(242,201,76,0.14)', text: '#b88718' };
+    case 'Concluída':
+      return { bg: 'rgba(89,210,124,0.14)', text: THEME.leafLight };
+    default:
+      return { bg: 'rgba(103,184,255,0.14)', text: '#3d8fcb' };
+  }
 }
 
 function calculateDistanceInMeters(
@@ -820,6 +840,10 @@ export default function VisitasScreen() {
     }
   }, [loadVisitasData, profile?.id, selectedPhoto, selectedProperty, user?.id]);
 
+  const pendingPropertiesCount = properties.length;
+  const completedVisitsCount = history.length;
+  const uploadStatusLabel = selectedPhoto ? 'Foto pronta para envio' : 'Aguardando evidência';
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
@@ -862,6 +886,32 @@ export default function VisitasScreen() {
               <Ionicons name="ellipsis-horizontal" size={18} color={THEME.link} />
             </TouchableOpacity>
           </View>
+
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStatCard}>
+              <View style={styles.heroStatIcon}>
+                <Ionicons name="business-outline" size={16} color={THEME.leafLight} />
+              </View>
+              <Text style={styles.heroStatValue}>{pendingPropertiesCount}</Text>
+              <Text style={styles.heroStatLabel}>Disponíveis</Text>
+            </View>
+
+            <View style={styles.heroStatCard}>
+              <View style={styles.heroStatIcon}>
+                <Ionicons name="images-outline" size={16} color={THEME.cornYellow} />
+              </View>
+              <Text style={styles.heroStatValue}>{selectedPhoto ? '1' : '0'}</Text>
+              <Text style={styles.heroStatLabel}>Foto pronta</Text>
+            </View>
+
+            <View style={styles.heroStatCard}>
+              <View style={styles.heroStatIcon}>
+                <Ionicons name="checkmark-done-outline" size={16} color={THEME.link} />
+              </View>
+              <Text style={styles.heroStatValue}>{completedVisitsCount}</Text>
+              <Text style={styles.heroStatLabel}>Realizadas</Text>
+            </View>
+          </View>
         </View>
 
         {errorMessage ? (
@@ -872,7 +922,7 @@ export default function VisitasScreen() {
         ) : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>NOVA EVIDENCIA</Text>
+          <Text style={styles.sectionTitle}>NOVA EVIDÊNCIA</Text>
           <Text style={styles.helperText}>
             Escolha a propriedade para vincular a foto da visita realizada.
           </Text>
@@ -892,6 +942,9 @@ export default function VisitasScreen() {
                   <Text style={styles.selectionLabel}>Propriedade selecionada</Text>
                   <Text style={styles.selectionTitle}>{selectedProperty.nome}</Text>
                   <Text style={styles.selectionMeta}>{selectedProperty.meta}</Text>
+                </View>
+                <View style={styles.selectionBadge}>
+                  <Text style={styles.selectionBadgeText}>Ativa</Text>
                 </View>
               </View>
 
@@ -926,6 +979,16 @@ export default function VisitasScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>UPLOAD DE FOTO</Text>
+          <View style={styles.uploadStatusRow}>
+            <View style={styles.uploadStatusBadge}>
+              <Ionicons
+                name={selectedPhoto ? 'checkmark-circle-outline' : 'time-outline'}
+                size={15}
+                color={selectedPhoto ? THEME.leafLight : THEME.cornYellow}
+              />
+              <Text style={styles.uploadStatusText}>{uploadStatusLabel}</Text>
+            </View>
+          </View>
           <View style={styles.uploadCard}>
             {selectedPhoto ? (
               <>
@@ -963,7 +1026,7 @@ export default function VisitasScreen() {
                 </View>
                 <Text style={styles.uploadTitle}>Selecionar Foto</Text>
                 <Text style={styles.uploadSubtitle}>
-                  JPEG, PNG, HEIC - metadados GPS serão lidos automaticamente
+                  JPEG, PNG, HEIC. Se houver GPS e EXIF, eles serão lidos automaticamente.
                 </Text>
                 <TouchableOpacity activeOpacity={0.9} style={styles.uploadButton} onPress={handlePickImage}>
                   <Text style={styles.uploadButtonText}>Escolher Arquivo</Text>
@@ -976,7 +1039,7 @@ export default function VisitasScreen() {
         <View style={styles.section}>
           <View style={styles.geoHeader}>
             <View>
-              <Text style={styles.geoTitle}>Geolocalização Extraída</Text>
+              <Text style={styles.geoTitle}>Geolocalização extraída</Text>
               <Text style={styles.geoSubtitle}>
                 Metadados da foto selecionada para {selectedProperty?.nome ?? 'a propriedade escolhida'}
               </Text>
@@ -1061,7 +1124,7 @@ export default function VisitasScreen() {
             onPress={handleCreateVisit}
             disabled={!selectedProperty || !selectedPhoto || isSubmittingVisit}>
             <Text style={styles.primaryButtonText}>
-              {isSubmittingVisit ? 'Salvando visita...' : 'Enviar para Análise'}
+              {isSubmittingVisit ? 'Salvando visita...' : 'Enviar para análise'}
             </Text>
             <Ionicons name="arrow-forward" size={18} color="#fff" />
           </TouchableOpacity>
@@ -1095,8 +1158,10 @@ export default function VisitasScreen() {
                     {item.data} - {item.hora}
                   </Text>
                 </View>
-                <View style={styles.historyBadge}>
-                  <Text style={styles.historyBadgeText}>{item.status}</Text>
+                <View style={[styles.historyBadge, { backgroundColor: getHistoryStatusStyle(item.status).bg }]}>
+                  <Text style={[styles.historyBadgeText, { color: getHistoryStatusStyle(item.status).text }]}>
+                    {item.status}
+                  </Text>
                 </View>
               </View>
             ))
@@ -1108,7 +1173,7 @@ export default function VisitasScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: THEME.page },
   content: { paddingBottom: 110 },
   heroSection: {
     paddingHorizontal: 18,
@@ -1164,7 +1229,42 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
-  subtitle: { color: THEME.link, fontSize: 13, lineHeight: 18 },
+  subtitle: { color: THEME.textSoft, fontSize: 13, lineHeight: 18, maxWidth: 270 },
+  heroStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+    zIndex: 10,
+  },
+  heroStatCard: {
+    flex: 1,
+    backgroundColor: THEME.cardBg,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: THEME.cardBorder,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  heroStatIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(77,200,90,0.12)',
+    marginBottom: 12,
+  },
+  heroStatValue: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  heroStatLabel: {
+    color: THEME.textSoft,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   moreButton: {
     width: 34,
     height: 34,
@@ -1176,18 +1276,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   section: {
-    backgroundColor: colors.card,
-    borderRadius: 22,
-    padding: 16,
+    backgroundColor: THEME.panel,
+    borderRadius: 24,
+    padding: 18,
     marginBottom: 14,
     marginHorizontal: 18,
-    shadowColor: '#0B1E17',
+    shadowColor: '#08130b',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 18,
-    elevation: 2,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.1)',
+    borderColor: 'rgba(77,200,90,0.14)',
   },
   feedbackCard: {
     flexDirection: 'row',
@@ -1198,28 +1298,30 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 14,
     marginHorizontal: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.18)',
   },
   feedbackText: {
     flex: 1,
-    color: '#7B6333',
+    color: '#f2dfaa',
     fontSize: 13,
     lineHeight: 18,
   },
   sectionTitle: {
-    color: THEME.skyMid,
+    color: THEME.link,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
     marginBottom: 10,
   },
-  helperText: { color: colors.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 },
+  helperText: { color: THEME.textSoft, fontSize: 13, lineHeight: 18, marginBottom: 14 },
   loadingWrap: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 26,
   },
   loadingText: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 13,
     marginTop: 10,
     textAlign: 'center',
@@ -1229,26 +1331,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 26,
     paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: THEME.panelSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.12)',
   },
   emptyTitle: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 15,
     fontWeight: '700',
     marginTop: 10,
     marginBottom: 4,
   },
   emptyText: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
   },
   selectionCard: {
-    backgroundColor: 'rgba(77,200,90,0.06)',
-    borderRadius: 18,
-    padding: 14,
+    backgroundColor: THEME.panelSoft,
+    borderRadius: 22,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: 'rgba(77,200,90,0.18)',
   },
   selectionTop: { flexDirection: 'row', marginBottom: 14 },
   selectionIcon: {
@@ -1261,34 +1367,68 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   selectionCopy: { flex: 1 },
+  selectionBadge: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(77,200,90,0.14)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.2)',
+  },
+  selectionBadgeText: {
+    color: THEME.leafLight,
+    fontSize: 11,
+    fontWeight: '800',
+  },
   selectionLabel: { color: THEME.skyMid, fontSize: 11, marginBottom: 4 },
   selectionTitle: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 20,
     fontWeight: '800',
     marginBottom: 2,
   },
-  selectionMeta: { color: colors.textMuted, fontSize: 12 },
+  selectionMeta: { color: THEME.textSoft, fontSize: 12 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   propertyChip: {
     borderRadius: 999,
-    backgroundColor: 'rgba(77,200,90,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: 'rgba(77,200,90,0.12)',
   },
   propertyChipActive: { backgroundColor: THEME.skyMid, borderColor: THEME.skyMid },
-  propertyChipText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  propertyChipText: { color: THEME.textSoft, fontSize: 12, fontWeight: '700' },
   propertyChipTextActive: { color: '#fff' },
   uploadCard: {
     borderWidth: 2,
     borderColor: THEME.leafLight,
     borderStyle: 'dashed',
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
     alignItems: 'center',
-    backgroundColor: 'rgba(77,200,90,0.06)',
+    backgroundColor: THEME.panelSoft,
+  },
+  uploadStatusRow: {
+    marginBottom: 12,
+  },
+  uploadStatusBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(77,200,90,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.14)',
+  },
+  uploadStatusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   photoPreview: {
     width: '100%',
@@ -1310,7 +1450,7 @@ const styles = StyleSheet.create({
   },
   uploadTitle: { color: colors.textDark, fontSize: 24, fontWeight: '800', marginBottom: 6 },
   uploadSubtitle: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
@@ -1339,7 +1479,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.16)',
   },
   photoInfoText: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1356,14 +1496,14 @@ const styles = StyleSheet.create({
   uploadButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   cancelPhotoButton: {
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: 'rgba(15,46,20,0.12)',
+    borderColor: 'rgba(77,200,90,0.18)',
   },
   cancelPhotoButtonText: {
-    color: THEME.skyMid,
+    color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1373,8 +1513,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 14,
   },
-  geoTitle: { color: colors.textDark, fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  geoSubtitle: { color: colors.textMuted, fontSize: 12, maxWidth: 220 },
+  geoTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  geoSubtitle: { color: THEME.textSoft, fontSize: 12, maxWidth: 220 },
   geoBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1390,14 +1530,14 @@ const styles = StyleSheet.create({
   metadataRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   metadataCard: {
     flex: 1,
-    backgroundColor: 'rgba(77,200,90,0.08)',
+    backgroundColor: THEME.panelSoft,
     borderRadius: 14,
     padding: 10,
     borderWidth: 1,
     borderColor: 'rgba(77,200,90,0.12)',
   },
   metadataLabel: { color: THEME.skyMid, fontSize: 11, marginBottom: 4 },
-  metadataValue: { color: colors.textDark, fontSize: 18, fontWeight: '800' },
+  metadataValue: { color: '#fff', fontSize: 18, fontWeight: '800' },
   metadataAlertCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1411,7 +1551,7 @@ const styles = StyleSheet.create({
   },
   metadataAlertText: {
     flex: 1,
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '600',
@@ -1424,7 +1564,7 @@ const styles = StyleSheet.create({
   },
   metadataDetailCard: {
     width: '48.8%',
-    backgroundColor: 'rgba(77,200,90,0.08)',
+    backgroundColor: THEME.panelSoft,
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
@@ -1436,13 +1576,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metadataDetailValue: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '700',
   },
   comparisonCard: {
-    backgroundColor: 'rgba(77,200,90,0.08)',
+    backgroundColor: THEME.panelSoft,
     borderRadius: 16,
     padding: 14,
     marginBottom: 16,
@@ -1464,7 +1604,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   comparisonValue: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '600',
@@ -1497,9 +1637,13 @@ const styles = StyleSheet.create({
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(77,200,90,0.15)',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(77,200,90,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.1)',
+    marginBottom: 10,
   },
   historyIcon: {
     width: 42,
@@ -1511,15 +1655,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   historyCopy: { flex: 1 },
-  historyTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  historyMeta: { color: colors.textMuted, fontSize: 12 },
+  historyTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  historyMeta: { color: THEME.textSoft, fontSize: 12 },
   historyBadge: {
     borderRadius: 999,
-    backgroundColor: 'rgba(77,200,90,0.12)',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.18)',
   },
-  historyBadgeText: { color: THEME.leafLight, fontSize: 12, fontWeight: '700' },
+  historyBadgeText: { fontSize: 12, fontWeight: '700' },
 });

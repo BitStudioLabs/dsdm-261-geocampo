@@ -40,7 +40,7 @@ const THEME = {
   link: '#7de88a',
 };
 
-const PERIODOS = ['7 dias', 'Mes', 'Ano'] as const;
+const PERIODOS = ['7 dias', 'Mês', 'Ano'] as const;
 type Periodo = (typeof PERIODOS)[number];
 
 type VisitStatusDb =
@@ -80,7 +80,7 @@ function getPeriodStart(periodo: Periodo) {
     return start;
   }
 
-  if (periodo === 'Mes') {
+  if (periodo === 'Mês') {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   }
 
@@ -237,7 +237,7 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
 
 export default function RelatoriosScreen() {
   const { profile, user } = useAuth();
-  const [periodoAtivo, setPeriodoAtivo] = useState<Periodo>('Mes');
+  const [periodoAtivo, setPeriodoAtivo] = useState<Periodo>('Mês');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -333,7 +333,7 @@ export default function RelatoriosScreen() {
       return 'Visitas em 7 dias';
     }
 
-    if (periodoAtivo === 'Mes') {
+    if (periodoAtivo === 'Mês') {
       return 'Visitas no mês';
     }
 
@@ -391,7 +391,7 @@ export default function RelatoriosScreen() {
           <View style={styles.scoreCard}>
             <View style={styles.scoreCardCopy}>
               <Text style={styles.scoreCaption}>
-                Resumo de visitas em {periodoAtivo === 'Mes' ? 'mês' : periodoAtivo.toLowerCase()}
+                Resumo de visitas em {periodoAtivo === 'Mês' ? 'mês' : periodoAtivo.toLowerCase()}
               </Text>
               <Text style={styles.scoreSummaryTitle}>Acompanhe seu histórico de campo</Text>
               <Text style={styles.scoreSummaryText}>
@@ -414,7 +414,7 @@ export default function RelatoriosScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            HISTÓRICO DE VISITAS - {periodoAtivo === 'Mes' ? 'MÊS' : periodoAtivo.toUpperCase()}
+            HISTÓRICO DE VISITAS - {periodoAtivo === 'Mês' ? 'MÊS' : periodoAtivo.toUpperCase()}
           </Text>
           {isLoading ? (
             <View style={styles.loadingWrap}>
