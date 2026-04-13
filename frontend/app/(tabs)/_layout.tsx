@@ -107,9 +107,9 @@ export default function TabsLayout() {
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}>
-      <Tabs.Screen name="index" options={{ title: 'Inicio' }} />
+      <Tabs.Screen name="index" options={{ title: 'Início' }} />
       <Tabs.Screen name="visitas" options={{ title: 'Visitas' }} />
-      <Tabs.Screen name="relatorios" options={{ title: 'Relatorios' }} />
+      <Tabs.Screen name="relatorios" options={{ title: 'Relatórios' }} />
       <Tabs.Screen name="perfil" options={{ title: 'Perfil' }} />
     </Tabs>
   );
