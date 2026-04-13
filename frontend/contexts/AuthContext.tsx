@@ -20,6 +20,7 @@ export type UserProfile = {
   perfil: UserRole;
   telefone: string | null;
   fotoUrl: string | null;
+  fotoPath: string | null;
   ativo: boolean;
   criadoEm: string | null;
   regionalNome: string | null;
@@ -63,6 +64,7 @@ function normalizeProfile(row: any, authUser: User): UserProfile {
     perfil: row?.perfil ?? null,
     telefone: row?.telefone ?? null,
     fotoUrl: row?.foto_url ?? null,
+    fotoPath: row?.foto_path ?? null,
     ativo: row?.ativo ?? true,
     criadoEm: row?.criado_em ?? authUser.created_at ?? null,
     regionalNome: row?.regioes?.nome ?? null,
@@ -113,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome_completo, email, perfil, telefone, foto_url, ativo, criado_em, regioes(nome, uf)')
+      .select('id, nome_completo, email, perfil, telefone, foto_url, foto_path, ativo, criado_em, regioes(nome, uf)')
       .eq('id', currentUser.id)
       .single();
 
