@@ -29,15 +29,18 @@ import { colors } from '@/src/theme/colors';
 const { width: SCREEN_W } = Dimensions.get('window');
 
 const THEME = {
-  skyTop: '#0a1f0d',
-  skyMid: '#0f2e14',
-  starColor: 'rgba(255,255,255,0.8)',
-  leafLight: '#4dc85a',
-  cornYellow: '#f5c842',
-  cardBg: 'rgba(10,31,13,0.85)',
-  cardBorder: 'rgba(77,200,90,0.2)',
-  textGray: 'rgba(255,255,255,0.55)',
-  link: '#7de88a',
+  page: '#06180a',
+  hero: '#0a2711',
+  panel: '#0f2116',
+  panelStrong: '#12301b',
+  starColor: 'rgba(255,255,255,0.18)',
+  line: 'rgba(122, 217, 140, 0.14)',
+  lineStrong: 'rgba(122, 217, 140, 0.28)',
+  primary: '#59d27c',
+  primarySoft: 'rgba(89, 210, 124, 0.16)',
+  yellow: '#f2c94c',
+  textSoft: 'rgba(240, 247, 241, 0.72)',
+  textMuted: 'rgba(240, 247, 241, 0.55)',
 };
 
 const PERIODOS = ['7 dias', 'Mês', 'Ano'] as const;
@@ -342,33 +345,15 @@ export default function RelatoriosScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
+      <StatusBar barStyle="light-content" backgroundColor={THEME.page} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <View style={styles.skyBg} />
 
-          {STARS.map((star) => (
-            <AnimatedStar key={star.id} star={star} />
-          ))}
-
-          {FIREFLIES.map((firefly) => (
-            <Firefly key={firefly.id} {...firefly} />
-          ))}
-
-          <View style={styles.moonContainer}>
-            <View style={styles.moon}>
-              <View style={styles.moonInner}>
-                <View style={[styles.crater, { top: 5, left: 6, width: 5, height: 5 }]} />
-                <View style={[styles.crater, { top: 14, left: 16, width: 3, height: 3 }]} />
-                <View style={[styles.crater, { top: 18, left: 8, width: 4, height: 4 }]} />
-              </View>
-            </View>
-          </View>
-
           <View style={styles.header}>
             <Text style={styles.title}>Relatórios</Text>
             <TouchableOpacity activeOpacity={0.9} style={styles.filterButton}>
-              <Ionicons name="options-outline" size={16} color={THEME.link} />
+              <Ionicons name="options-outline" size={16} color={THEME.primary} />
               <Text style={styles.filterText}>Filtrar</Text>
             </TouchableOpacity>
           </View>
@@ -399,14 +384,14 @@ export default function RelatoriosScreen() {
               </Text>
             </View>
             <View style={styles.trophyWrap}>
-              <Ionicons name="clipboard-outline" size={28} color={THEME.cornYellow} />
+              <Ionicons name="clipboard-outline" size={28} color={THEME.yellow} />
             </View>
           </View>
         </View>
 
         <View style={styles.summaryGrid}>
           <View style={styles.summaryCardWide}>
-            <Ionicons name="clipboard-outline" size={22} color={THEME.cornYellow} />
+            <Ionicons name="clipboard-outline" size={22} color={THEME.yellow} />
             <Text style={styles.summaryValue}>{isLoading ? '...' : String(history.length)}</Text>
             <Text style={styles.summaryLabel}>{visitsLabel}</Text>
           </View>
@@ -418,18 +403,18 @@ export default function RelatoriosScreen() {
           </Text>
           {isLoading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator color={THEME.leafLight} size="small" />
+              <ActivityIndicator color={THEME.primary} size="small" />
               <Text style={styles.loadingText}>Carregando histórico...</Text>
             </View>
           ) : errorMessage ? (
             <View style={styles.emptyState}>
-              <Ionicons name="alert-circle-outline" size={24} color={THEME.cornYellow} />
+              <Ionicons name="alert-circle-outline" size={24} color={THEME.yellow} />
               <Text style={styles.emptyTitle}>Relatórios indisponíveis</Text>
               <Text style={styles.emptyDescription}>{errorMessage}</Text>
             </View>
           ) : history.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="clipboard-outline" size={24} color={THEME.textGray} />
+              <Ionicons name="clipboard-outline" size={24} color={THEME.textSoft} />
               <Text style={styles.emptyTitle}>Nenhuma visita no período</Text>
               <Text style={styles.emptyDescription}>
                 Quando houver visitas nesse filtro, elas vão aparecer aqui.
@@ -439,7 +424,7 @@ export default function RelatoriosScreen() {
             history.map((item) => (
               <TouchableOpacity key={item.id} activeOpacity={0.9} style={styles.historyRow}>
                 <View style={styles.historyIconWrap}>
-                  <Ionicons name={item.icon} size={20} color={THEME.leafLight} />
+                  <Ionicons name={item.icon} size={20} color={THEME.primary} />
                 </View>
                 <View style={styles.historyTextWrap}>
                   <Text style={styles.historyTitle}>{item.title}</Text>
@@ -456,7 +441,7 @@ export default function RelatoriosScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: THEME.page },
   content: { paddingBottom: 110 },
   heroSection: {
     paddingHorizontal: 20,
@@ -471,92 +456,64 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: THEME.skyTop,
-  },
-  moonContainer: {
-    position: 'absolute',
-    top: 16,
-    right: 70,
-  },
-  moon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#fffbe0',
-    shadowColor: '#fffbe0',
-    shadowOpacity: 0.8,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
-  },
-  moonInner: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
-    backgroundColor: '#fffbe0',
-    overflow: 'hidden',
-  },
-  crater: {
-    position: 'absolute',
-    backgroundColor: 'rgba(200,190,150,0.4)',
-    borderRadius: 50,
+    backgroundColor: THEME.page,
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, zIndex: 10 },
-  title: { color: '#fff', fontSize: 31, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
-  filterButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: THEME.cardBg, borderWidth: 1, borderColor: THEME.cardBorder, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
-  filterText: { color: THEME.link, fontSize: 13, fontWeight: '700' },
+  title: { color: '#fff', fontSize: 31, fontWeight: '800' },
+  filterButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: THEME.panel, borderWidth: 1, borderColor: THEME.line, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
+  filterText: { color: THEME.primary, fontSize: 13, fontWeight: '700' },
   periodRow: { flexDirection: 'row', gap: 8, marginBottom: 18, zIndex: 10 },
-  periodChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: THEME.cardBg, borderWidth: 1, borderColor: THEME.cardBorder },
-  periodChipActive: { backgroundColor: THEME.leafLight, borderColor: THEME.leafLight },
-  periodChipText: { color: THEME.textGray, fontSize: 13, fontWeight: '700' },
+  periodChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: THEME.panel, borderWidth: 1, borderColor: THEME.line },
+  periodChipActive: { backgroundColor: THEME.primary, borderColor: THEME.primary },
+  periodChipText: { color: THEME.textSoft, fontSize: 13, fontWeight: '700' },
   periodChipTextActive: { color: '#fff' },
-  scoreCard: { backgroundColor: THEME.cardBg, borderRadius: 22, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: THEME.cardBorder, zIndex: 10 },
+  scoreCard: { backgroundColor: THEME.hero, borderRadius: 28, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: THEME.lineStrong, zIndex: 10, shadowColor: '#030804', shadowOpacity: 0.25, shadowRadius: 22, shadowOffset: { width: 0, height: 12 }, elevation: 6 },
   scoreCardCopy: { flex: 1, paddingRight: 16 },
-  scoreCaption: { color: THEME.link, fontSize: 12, marginBottom: 6 },
+  scoreCaption: { color: THEME.primary, fontSize: 12, fontWeight: '700', marginBottom: 6 },
   scoreSummaryTitle: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 6 },
-  scoreSummaryText: { color: THEME.textGray, fontSize: 13, lineHeight: 18, maxWidth: 280 },
-  trophyWrap: { width: 64, height: 64, borderRadius: 18, backgroundColor: 'rgba(245,200,66,0.15)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(245,200,66,0.25)' },
+  scoreSummaryText: { color: THEME.textSoft, fontSize: 13, lineHeight: 18, maxWidth: 280 },
+  trophyWrap: { width: 64, height: 64, borderRadius: 18, backgroundColor: 'rgba(242,201,76,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(242,201,76,0.24)' },
   summaryGrid: { marginBottom: 18, paddingHorizontal: 20 },
   summaryCardWide: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
+    backgroundColor: THEME.panel,
+    borderRadius: 24,
     paddingVertical: 18,
     paddingHorizontal: 16,
     alignItems: 'center',
-    shadowColor: '#0B1E17',
+    shadowColor: '#030804',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.18,
     shadowRadius: 18,
-    elevation: 3,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.1)',
+    borderColor: THEME.line,
   },
-  summaryValue: { marginTop: 10, color: colors.textDark, fontSize: 34, fontWeight: '800' },
-  summaryLabel: { color: colors.textMuted, fontSize: 13, marginTop: 2, textAlign: 'center' },
+  summaryValue: { marginTop: 10, color: '#fff', fontSize: 34, fontWeight: '800' },
+  summaryLabel: { color: THEME.textSoft, fontSize: 13, marginTop: 2, textAlign: 'center' },
   section: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
+    backgroundColor: THEME.panel,
+    borderRadius: 24,
     padding: 16,
     marginBottom: 16,
     marginHorizontal: 20,
-    shadowColor: '#0B1E17',
+    shadowColor: '#030804',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.16,
     shadowRadius: 18,
-    elevation: 2,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.1)',
+    borderColor: THEME.line,
   },
-  sectionTitle: { color: THEME.skyMid, fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 12 },
-  historyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(77,200,90,0.15)' },
-  historyIconWrap: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(77,200,90,0.12)', marginRight: 12 },
+  sectionTitle: { color: THEME.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 12 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: THEME.line },
+  historyIconWrap: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primarySoft, marginRight: 12 },
   historyTextWrap: { flex: 1 },
-  historyTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  historySubtitle: { color: colors.textMuted, fontSize: 12 },
-  historyStatus: { color: THEME.skyMid, fontSize: 12, fontWeight: '700', marginLeft: 10 },
+  historyTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  historySubtitle: { color: THEME.textSoft, fontSize: 12 },
+  historyStatus: { color: THEME.primary, fontSize: 12, fontWeight: '700', marginLeft: 10 },
   loadingWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
-  loadingText: { color: colors.textMuted, fontSize: 13, marginTop: 10 },
+  loadingText: { color: THEME.textSoft, fontSize: 13, marginTop: 10 },
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, paddingHorizontal: 16 },
-  emptyTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginTop: 10, marginBottom: 4 },
-  emptyDescription: { color: colors.textMuted, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  emptyTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 10, marginBottom: 4 },
+  emptyDescription: { color: THEME.textSoft, fontSize: 13, lineHeight: 18, textAlign: 'center' },
 });
