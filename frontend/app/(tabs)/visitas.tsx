@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -64,7 +64,7 @@ type VisitHistoryItem = {
   propriedade: string;
   data: string;
   hora: string;
-  status: 'Concluída' | 'Enviada' | 'Em análise' | 'Aprovada' | 'Rejeitada';
+  status: 'Concluída' | 'Enviada';
 };
 
 type VisitStatusDb =
@@ -80,6 +80,8 @@ type VisitStatusDb =
 type AtribuicaoRow = {
   id: number;
   id_propriedade: number;
+  atualizado_em?: string | null;
+  criado_em?: string | null;
 };
 
 type VisitaRow = {
@@ -403,38 +405,40 @@ function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): SelectedPhoto 
 }
 
 function mapVisitStatusToHistoryLabel(status?: VisitStatusDb): VisitHistoryItem['status'] {
-  if (status === 'aprovada') {
-    return 'Aprovada';
+  if (status === 'pendente' || status === 'em_andamento') {
+    return 'Enviada';
   }
 
-  if (status === 'rejeitada') {
-    return 'Rejeitada';
-  }
-
-  if (status === 'em_analise') {
-    return 'Em análise';
-  }
-
-  if (status === 'finalizada') {
-    return 'Concluída';
-  }
-
-  return 'Enviada';
+  return 'Concluída';
 }
 
 function getHistoryStatusStyle(status: VisitHistoryItem['status']) {
   switch (status) {
-    case 'Aprovada':
-      return { bg: 'rgba(56,211,159,0.14)', text: '#2aa774' };
-    case 'Rejeitada':
-      return { bg: 'rgba(255,125,125,0.14)', text: '#d85a5a' };
-    case 'Em análise':
-      return { bg: 'rgba(242,201,76,0.14)', text: '#b88718' };
     case 'Concluída':
       return { bg: 'rgba(89,210,124,0.14)', text: THEME.leafLight };
     default:
       return { bg: 'rgba(103,184,255,0.14)', text: '#3d8fcb' };
   }
+}
+
+function toTimestamp(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  const time = parsed.getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function hasPendingAssignment(item: AtribuicaoRow, latestVisit?: VisitaRow | null) {
+  if (!latestVisit) return true;
+
+  const assignmentTimestamp = toTimestamp(item.atualizado_em ?? item.criado_em ?? null);
+  const visitTimestamp = toTimestamp(latestVisit.criado_em ?? null);
+
+  if (assignmentTimestamp == null || visitTimestamp == null) {
+    return true;
+  }
+
+  return visitTimestamp < assignmentTimestamp;
 }
 
 function calculateDistanceInMeters(
@@ -468,6 +472,7 @@ export default function VisitasScreen() {
   const [history, setHistory] = useState<VisitHistoryItem[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
+  const hasFocusedOnceRef = React.useRef(false);
 
   const loadVisitasData = useCallback(async () => {
     const currentUserId = profile?.id ?? user?.id;
@@ -485,7 +490,7 @@ export default function VisitasScreen() {
     const [atribuicoesRes, visitasRes] = await Promise.all([
       supabase
         .from('atribuicoes')
-        .select('id, id_propriedade')
+        .select('id, id_propriedade, atualizado_em, criado_em')
         .eq('id_instrutor', currentUserId)
         .eq('ativa', true)
         .order('atualizado_em', { ascending: false }),
@@ -546,7 +551,7 @@ export default function VisitasScreen() {
     }
 
     const nextProperties = atribuicoes
-      .filter((item) => !latestVisitByProperty[item.id_propriedade])
+      .filter((item) => hasPendingAssignment(item, latestVisitByProperty[item.id_propriedade] ?? null))
       .map((item) => {
         const property = propertyLookup[item.id_propriedade];
 
@@ -561,7 +566,7 @@ export default function VisitasScreen() {
         };
       });
 
-    const nextHistory = visitas.map((item, index) => {
+    const nextHistory = Object.values(latestVisitByProperty).map((item, index) => {
       const property = item.id_propriedade ? propertyLookup[item.id_propriedade] ?? null : null;
 
       return {
@@ -575,7 +580,9 @@ export default function VisitasScreen() {
 
     setProperties(nextProperties);
     setHistory(nextHistory);
-    setSelectedPropertyId((current) => current ?? nextProperties[0]?.id ?? null);
+    setSelectedPropertyId((current) =>
+      nextProperties.some((item) => item.id === current) ? current ?? null : nextProperties[0]?.id ?? null
+    );
   }, [profile?.id, user?.id]);
 
   useEffect(() => {
@@ -606,6 +613,34 @@ export default function VisitasScreen() {
       mounted = false;
     };
   }, [loadVisitasData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+
+      let active = true;
+
+      setRefreshing(true);
+      (async () => {
+        try {
+          await loadVisitasData();
+        } catch (error) {
+          console.error('Erro ao recarregar tela de visitas ao retomar foco:', error);
+        } finally {
+          if (active) {
+            setRefreshing(false);
+          }
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [loadVisitasData])
+  );
 
   const selectedProperty = useMemo(
     () => properties.find((item) => item.id === selectedPropertyId) ?? properties[0] ?? null,

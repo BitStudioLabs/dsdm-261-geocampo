@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -107,36 +108,19 @@ function formatDateTime(value?: string | null) {
 }
 
 function getVisitIcon(status?: VisitStatusDb): keyof typeof Ionicons.glyphMap {
-  if (status === 'aprovada') {
-    return 'checkmark-circle-outline';
+  if (status === 'pendente' || status === 'em_andamento') {
+    return 'paper-plane-outline';
   }
 
-  if (status === 'rejeitada') {
-    return 'close-circle-outline';
-  }
-
-  if (status === 'em_analise') {
-    return 'time-outline';
-  }
-
-  return 'clipboard-outline';
+  return 'checkmark-done-outline';
 }
 
 function getVisitStatusLabel(status?: VisitStatusDb) {
-  switch (status) {
-    case 'aprovada':
-      return 'Aprovada';
-    case 'rejeitada':
-      return 'Rejeitada';
-    case 'em_analise':
-      return 'Em análise';
-    case 'em_andamento':
-      return 'Enviada';
-    case 'finalizada':
-      return 'Concluída';
-    default:
-      return 'Registrada';
+  if (status === 'pendente' || status === 'em_andamento') {
+    return 'Enviada';
   }
+
+  return 'Concluída';
 }
 
 const STARS = Array.from({ length: 25 }, (_, i) => ({
@@ -244,6 +228,8 @@ export default function RelatoriosScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [reloadToken, setReloadToken] = useState(0);
+  const hasFocusedOnceRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -329,7 +315,18 @@ export default function RelatoriosScreen() {
     return () => {
       mounted = false;
     };
-  }, [periodoAtivo, profile?.id, user?.id]);
+  }, [periodoAtivo, profile?.id, reloadToken, user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+
+      setReloadToken((current) => current + 1);
+    }, [])
+  );
 
   const visitsLabel = useMemo(() => {
     if (periodoAtivo === '7 dias') {
