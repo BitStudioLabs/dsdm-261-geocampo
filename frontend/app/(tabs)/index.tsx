@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   FlatList,
@@ -38,10 +39,7 @@ type StatusType =
   | 'Agendada'
   | 'Hoje'
   | 'Em andamento'
-  | 'Concluída'
-  | 'Em análise'
-  | 'Aprovada'
-  | 'Rejeitada';
+  | 'Concluída';
 type DashboardFilter = 'atribuidas' | 'hoje' | 'concluidas';
 
 type VisitStatusDb =
@@ -127,11 +125,17 @@ function formatVisitDate(dateValue?: string | null) {
 }
 
 function mapVisitStatusToLabel(status?: VisitStatusDb, dateValue?: string | null, isCompleted?: boolean): StatusType {
-  if (status === 'em_andamento') return 'Em andamento';
-  if (status === 'em_analise') return 'Em análise';
-  if (status === 'aprovada') return 'Aprovada';
-  if (status === 'rejeitada') return 'Rejeitada';
-  if (status === 'finalizada' || isCompleted) return 'Concluída';
+  if (
+    status === 'pendente' ||
+    status === 'em_andamento' ||
+    status === 'finalizada' ||
+    status === 'em_analise' ||
+    status === 'aprovada' ||
+    status === 'rejeitada' ||
+    isCompleted
+  ) {
+    return 'Concluída';
+  }
   if (!dateValue) return 'Agendada';
 
   const parsed = new Date(dateValue);
@@ -148,6 +152,26 @@ function mapVisitStatusToLabel(status?: VisitStatusDb, dateValue?: string | null
   }
 
   return 'Agendada';
+}
+
+function toTimestamp(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  const time = parsed.getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function hasPendingAssignment(item: AtribuicaoDashboardRow, latestVisit?: VisitaDashboardRow | null) {
+  if (!latestVisit) return true;
+
+  const assignmentTimestamp = toTimestamp(item.atualizado_em ?? item.criado_em ?? null);
+  const visitTimestamp = toTimestamp(latestVisit.criado_em ?? null);
+
+  if (assignmentTimestamp == null || visitTimestamp == null) {
+    return true;
+  }
+
+  return visitTimestamp < assignmentTimestamp;
 }
 
 function extractAvatarPath(value: string) {
@@ -188,7 +212,7 @@ function buildAssignmentItem(
     id: `atr-${item.id}`,
     nome: property?.nome ?? 'Propriedade sem nome',
     local: [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') || 'Localização não informada',
-    distancia: latestVisit ? 'Última visita registrada' : 'A conferir',
+    distancia: latestVisit ? 'Nova visita pendente' : 'A conferir',
     status: mapVisitStatusToLabel(latestVisit?.status_visita, visitDate, false),
     visitaEm: formatVisitDate(visitDate),
     ...iconData,
@@ -219,12 +243,6 @@ function getStatusStyle(status: StatusType) {
       return { bg: 'rgba(242,201,76,0.14)', text: THEME.yellow, dot: THEME.yellow, icon: 'calendar-outline' as const };
     case 'Em andamento':
       return { bg: 'rgba(103,184,255,0.14)', text: THEME.blue, dot: THEME.blue, icon: 'time-outline' as const };
-    case 'Em análise':
-      return { bg: 'rgba(242,201,76,0.14)', text: THEME.yellow, dot: THEME.yellow, icon: 'search-outline' as const };
-    case 'Aprovada':
-      return { bg: 'rgba(56,211,159,0.14)', text: THEME.success, dot: THEME.success, icon: 'checkmark-circle-outline' as const };
-    case 'Rejeitada':
-      return { bg: 'rgba(255,125,125,0.14)', text: THEME.danger, dot: THEME.danger, icon: 'close-circle-outline' as const };
     default:
       return { bg: 'rgba(56,211,159,0.14)', text: THEME.success, dot: THEME.success, icon: 'checkmark-done-outline' as const };
   }
@@ -265,6 +283,7 @@ export default function DashboardScreen() {
   const [assignedItems, setAssignedItems] = useState<DashboardItem[]>([]);
   const [completedItems, setCompletedItems] = useState<DashboardItem[]>([]);
   const [stats, setStats] = useState<DashboardStats>({ atribuidas: '0', hoje: '0', concluidas: '0' });
+  const hasFocusedOnceRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -338,7 +357,7 @@ export default function DashboardScreen() {
         }
 
         const atribuidas = atribuicoes
-          .filter((item) => !latestVisitByProperty[item.id_propriedade])
+          .filter((item) => hasPendingAssignment(item, latestVisitByProperty[item.id_propriedade] ?? null))
           .map((item, index) => buildAssignmentItem(item, propertyLookup, index, null));
 
         const concluidas = Object.values(latestVisitByProperty).map((item, index) =>
@@ -401,6 +420,17 @@ export default function DashboardScreen() {
       cancelled = true;
     };
   }, [profile?.id, user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+
+      setRefreshing((current) => !current);
+    }, [])
+  );
 
   useEffect(() => {
     let cancelled = false;
