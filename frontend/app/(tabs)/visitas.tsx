@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
 import {
   ActivityIndicator,
   Alert,
@@ -266,8 +267,65 @@ function formatFileSize(bytes?: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getExifValue(exif: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (key in exif && exif[key] != null) {
+      return exif[key];
+    }
+  }
+
+  return null;
+}
+
+function toNumericExifPart(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized.includes('/')) {
+      const [rawA, rawB] = normalized.split('/');
+      const a = Number(rawA);
+      const b = Number(rawB);
+
+      if (Number.isFinite(a) && Number.isFinite(b) && b !== 0) {
+        return a / b;
+      }
+    }
+
+    const parsed = Number(normalized.replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const maybeNumerator = (value as { numerator?: unknown; denominator?: unknown }).numerator;
+    const maybeDenominator = (value as { numerator?: unknown; denominator?: unknown }).denominator;
+
+    if (maybeNumerator != null && maybeDenominator != null) {
+      const numerator = toNumericExifPart(maybeNumerator);
+      const denominator = toNumericExifPart(maybeDenominator);
+
+      if (numerator != null && denominator != null && denominator !== 0) {
+        return numerator / denominator;
+      }
+    }
+  }
+
+  return null;
+}
+
 function toDecimalCoordinate(value: unknown, ref?: string) {
   if (typeof value === 'number') {
+    if (value === 0 && !ref) {
+      return null;
+    }
+
     if (ref === 'S' || ref === 'W') {
       return value * -1;
     }
@@ -275,22 +333,45 @@ function toDecimalCoordinate(value: unknown, ref?: string) {
     return value;
   }
 
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    const direct = Number(normalized.replace(',', '.'));
+    if (Number.isFinite(direct) && direct !== 0) {
+      return ref === 'S' || ref === 'W' ? direct * -1 : direct;
+    }
+
+    const parts = normalized
+      .split(/[,\s]+/)
+      .map((part) => toNumericExifPart(part))
+      .filter((part): part is number => part != null);
+
+    if (parts.length >= 3) {
+      const signal = ref === 'S' || ref === 'W' ? -1 : 1;
+      return signal * (parts[0] + parts[1] / 60 + parts[2] / 3600);
+    }
+
+    return null;
+  }
+
   if (!Array.isArray(value) || value.length < 3) {
     return null;
   }
 
-  const [degrees, minutes, seconds] = value;
+  const parts = value
+    .map((part) => toNumericExifPart(part))
+    .filter((part): part is number => part != null);
 
-  if (
-    typeof degrees !== 'number' ||
-    typeof minutes !== 'number' ||
-    typeof seconds !== 'number'
-  ) {
+  if (parts.length < 3) {
     return null;
   }
 
   const signal = ref === 'S' || ref === 'W' ? -1 : 1;
-  return signal * (degrees + minutes / 60 + seconds / 3600);
+  return signal * (parts[0] + parts[1] / 60 + parts[2] / 3600);
 }
 
 function formatCoordinate(value: number | null, suffix = '') {
@@ -343,40 +424,95 @@ function parseExifDate(value: string | null) {
   return parsed.toISOString();
 }
 
+function extractCoordinate(exif: Record<string, unknown>, kind: 'latitude' | 'longitude') {
+  const isLatitude = kind === 'latitude';
+  const directKeys = isLatitude
+    ? ['latitude', 'Latitude', 'GPSLatitudeDecimal', 'gpsLatitudeDecimal']
+    : ['longitude', 'Longitude', 'GPSLongitudeDecimal', 'gpsLongitudeDecimal'];
+  const dmsKeys = isLatitude
+    ? ['GPSLatitude', 'gpsLatitude', 'ExifGPSLatitude']
+    : ['GPSLongitude', 'gpsLongitude', 'ExifGPSLongitude'];
+  const refKeys = isLatitude
+    ? ['GPSLatitudeRef', 'gpsLatitudeRef', 'ExifGPSLatitudeRef']
+    : ['GPSLongitudeRef', 'gpsLongitudeRef', 'ExifGPSLongitudeRef'];
+
+  const refValue = getExifValue(exif, refKeys);
+  const ref = typeof refValue === 'string' ? refValue.toUpperCase() : undefined;
+  const directValue = getExifValue(exif, directKeys);
+  const directCoordinate = toDecimalCoordinate(directValue, ref);
+
+  if (directCoordinate != null) {
+    return directCoordinate;
+  }
+
+  const dmsValue = getExifValue(exif, dmsKeys);
+  return toDecimalCoordinate(dmsValue, ref);
+}
+
+function extractAltitude(exif: Record<string, unknown>) {
+  const altitudeValue = getExifValue(exif, ['altitude', 'Altitude', 'GPSAltitude', 'gpsAltitude']);
+  return toNumericExifPart(altitudeValue);
+}
+
+async function enrichAssetWithMediaLibrary(asset: ImagePicker.ImagePickerAsset) {
+  if (!asset.assetId) {
+    return asset;
+  }
+
+  try {
+    const permission = await MediaLibrary.requestPermissionsAsync();
+    if (!permission.granted) {
+      return asset;
+    }
+
+    const assetInfo = await MediaLibrary.getAssetInfoAsync(asset.assetId);
+    const mediaLibraryExif = (((assetInfo as unknown as { exif?: Record<string, unknown> | null }).exif) ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const mediaLocation = ((assetInfo as unknown as { location?: { latitude?: number; longitude?: number; altitude?: number } | null }).location) ?? null;
+    const assetExif = ((asset.exif ?? {}) as Record<string, unknown>) ?? {};
+
+    const mergedExif: Record<string, unknown> = {
+      ...mediaLibraryExif,
+      ...assetExif,
+    };
+
+    if (mediaLocation?.latitude != null && mergedExif.latitude == null && mergedExif.GPSLatitude == null) {
+      mergedExif.latitude = mediaLocation.latitude;
+      mergedExif.GPSLatitudeDecimal = mediaLocation.latitude;
+    }
+
+    if (mediaLocation?.longitude != null && mergedExif.longitude == null && mergedExif.GPSLongitude == null) {
+      mergedExif.longitude = mediaLocation.longitude;
+      mergedExif.GPSLongitudeDecimal = mediaLocation.longitude;
+    }
+
+    if (mediaLocation?.altitude != null && mergedExif.altitude == null && mergedExif.GPSAltitude == null) {
+      mergedExif.altitude = mediaLocation.altitude;
+      mergedExif.GPSAltitude = mediaLocation.altitude;
+    }
+
+    return {
+      ...asset,
+      exif: mergedExif,
+    };
+  } catch (error) {
+    console.warn('Falha ao enriquecer EXIF via media library:', error);
+    return asset;
+  }
+}
+
 function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): SelectedPhoto {
   const exif = (asset.exif ?? {}) as Record<string, unknown>;
   const exifFieldCount = Object.keys(exif).length;
-  const parsedLatitude = typeof exif.latitude === 'number' ? exif.latitude : null;
-  const parsedLongitude = typeof exif.longitude === 'number' ? exif.longitude : null;
-  const latitude =
-    parsedLatitude ??
-    toDecimalCoordinate(exif.GPSLatitude, typeof exif.GPSLatitudeRef === 'string' ? exif.GPSLatitudeRef : undefined) ??
-    null;
-  const longitude =
-    parsedLongitude ??
-    toDecimalCoordinate(
-      exif.GPSLongitude,
-      typeof exif.GPSLongitudeRef === 'string' ? exif.GPSLongitudeRef : undefined
-    ) ?? null;
-  const altitude =
-    typeof exif.altitude === 'number'
-      ? `${Math.round(exif.altitude)}m`
-      : typeof exif.GPSAltitude === 'number'
-      ? `${Math.round(exif.GPSAltitude)}m`
-      : 'Não disponível';
-  const rawDate =
-    (typeof exif.DateTimeOriginal === 'string' && exif.DateTimeOriginal) ||
-    (typeof exif.DateTimeDigitized === 'string' && exif.DateTimeDigitized) ||
-    (typeof exif.CreateDate === 'string' && exif.CreateDate) ||
-    null;
+  const latitude = extractCoordinate(exif, 'latitude');
+  const longitude = extractCoordinate(exif, 'longitude');
+  const altitudeValue = extractAltitude(exif);
+  const altitude = altitudeValue != null ? `${Math.round(altitudeValue)}m` : 'Não disponível';
+  const rawDate = (getExifValue(exif, ['DateTimeOriginal', 'DateTimeDigitized', 'CreateDate', 'dateTime']) as string | null) ?? null;
   const extension = asset.fileName?.split('.').pop()?.toLowerCase() || asset.mimeType?.split('/').pop() || 'jpg';
-  const altitudeValue =
-    typeof exif.altitude === 'number' ? exif.altitude : typeof exif.GPSAltitude === 'number' ? exif.GPSAltitude : null;
-  const cameraModel =
-    (typeof exif.Model === 'string' && exif.Model) ||
-    (typeof exif.model === 'string' && exif.model) ||
-    (typeof exif.make === 'string' && exif.make) ||
-    'Não identificado';
+  const cameraModel = (getExifValue(exif, ['Model', 'model', 'make', 'Make']) as string | null) || 'Não identificado';
 
   const capturedAt = rawDate
     ? rawDate.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$3/$2/$1').replace(' ', ' - ')
@@ -648,26 +784,32 @@ export default function VisitasScreen() {
   );
 
   const metadataItems = useMemo(
-    () => {
-      if (!selectedPhoto) {
-        return [];
-      }
-
-      return [
-        {
-          label: 'Latitude',
-          value: selectedPhoto.latitudeValue != null ? selectedPhoto.latitude : 'Sem GPS na foto',
-        },
-        {
-          label: 'Longitude',
-          value: selectedPhoto.longitudeValue != null ? selectedPhoto.longitude : 'Sem GPS na foto',
-        },
-        {
-          label: 'Altitude',
-          value: selectedPhoto.altitudeValue != null ? selectedPhoto.altitude : 'Sem altitude no EXIF',
-        },
-      ];
-    },
+    () => [
+      {
+        label: 'Latitude',
+        value: !selectedPhoto
+          ? 'Aguardando foto'
+          : selectedPhoto.latitudeValue != null
+            ? selectedPhoto.latitude
+            : 'Sem GPS na foto',
+      },
+      {
+        label: 'Longitude',
+        value: !selectedPhoto
+          ? 'Aguardando foto'
+          : selectedPhoto.longitudeValue != null
+            ? selectedPhoto.longitude
+            : 'Sem GPS na foto',
+      },
+      {
+        label: 'Altitude',
+        value: !selectedPhoto
+          ? 'Aguardando foto'
+          : selectedPhoto.altitudeValue != null
+            ? selectedPhoto.altitude
+            : 'Sem altitude no EXIF',
+      },
+    ],
     [selectedPhoto]
   );
 
@@ -778,7 +920,8 @@ export default function VisitasScreen() {
         return;
       }
 
-      setSelectedPhoto(buildSelectedPhoto(result.assets[0]));
+      const enrichedAsset = await enrichAssetWithMediaLibrary(result.assets[0]);
+      setSelectedPhoto(buildSelectedPhoto(enrichedAsset));
     } catch (error) {
       console.error('Erro ao selecionar foto da visita:', error);
       Alert.alert('Erro ao selecionar foto', 'Não foi possível abrir sua galeria agora.');
@@ -1097,16 +1240,14 @@ export default function VisitasScreen() {
             </View>
           </View>
 
-          {metadataItems.length > 0 ? (
-            <View style={styles.metadataRow}>
-              {metadataItems.map((item) => (
-                <View key={item.label} style={styles.metadataCard}>
-                  <Text style={styles.metadataLabel}>{item.label}</Text>
-                  <Text style={styles.metadataValue}>{item.value}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
+          <View style={styles.metadataRow}>
+            {metadataItems.map((item) => (
+              <View key={item.label} style={styles.metadataCard}>
+                <Text style={styles.metadataLabel}>{item.label}</Text>
+                <Text style={styles.metadataValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
           <View style={styles.metadataAlertCard}>
             <Ionicons name={metadataAlert.icon} size={18} color={THEME.skyMid} />
@@ -1562,9 +1703,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.2)',
   },
   geoBadgeText: { color: THEME.leafLight, fontSize: 12, fontWeight: '700' },
-  metadataRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  metadataRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   metadataCard: {
-    flex: 1,
+    minWidth: '31%',
+    flexGrow: 1,
     backgroundColor: THEME.panelSoft,
     borderRadius: 14,
     padding: 10,
@@ -1572,7 +1714,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.12)',
   },
   metadataLabel: { color: THEME.skyMid, fontSize: 11, marginBottom: 4 },
-  metadataValue: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  metadataValue: { color: '#fff', fontSize: 16, lineHeight: 20, fontWeight: '800' },
   metadataAlertCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
