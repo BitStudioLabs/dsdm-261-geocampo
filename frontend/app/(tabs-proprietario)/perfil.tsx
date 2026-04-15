@@ -20,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/src/lib/supabase';
@@ -70,6 +71,7 @@ function propertyStatusLabel(value: string | null) {
 }
 
 export default function PerfilProprietarioScreen() {
+  const insets = useSafeAreaInsets();
   const { logout, profile, refreshProfile, user } = useAuth();
   const userId = profile?.id ?? user?.id ?? null;
   const [loading, setLoading] = useState(true);
@@ -180,7 +182,7 @@ export default function PerfilProprietarioScreen() {
   const totalArea = useMemo(() => properties.reduce((sum, item) => sum + Number(item.area_total ?? 0), 0), [properties]);
   const activeProperties = useMemo(() => properties.filter((item) => item.status_propriedade === 'ativo').length, [properties]);
   const memberSince = useMemo(() => {
-    if (!profile?.criadoEm) return 'Nao informado';
+    if (!profile?.criadoEm) return 'Não informado';
     return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(profile.criadoEm));
   }, [profile?.criadoEm]);
 
@@ -225,7 +227,7 @@ export default function PerfilProprietarioScreen() {
     if (!userId || !avatarKey) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permissao necessaria', 'Permita acesso a galeria para alterar a foto.');
+      Alert.alert('Permissão necessaria', 'Permita acesso a galeria para alterar a foto.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
@@ -266,7 +268,7 @@ export default function PerfilProprietarioScreen() {
         await logout();
         router.replace('/login');
       } catch {
-        Alert.alert('Erro ao sair', 'Nao foi possivel sair da conta agora.');
+        Alert.alert('Erro ao sair', 'Não foi possível sair da conta agora.');
       }
     };
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -286,7 +288,7 @@ export default function PerfilProprietarioScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.gold} />}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
+        <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
           <Text style={styles.pageTitle}>Perfil</Text>
           <View style={styles.heroCard}>
             <View style={styles.heroRow}>
@@ -308,7 +310,7 @@ export default function PerfilProprietarioScreen() {
             </View>
 
             <View style={styles.inlineCard}><Ionicons name="mail-outline" size={16} color={THEME.gold} /><Text style={styles.inlineText}>{profile?.email ?? producer?.email ?? user?.email ?? 'Sem e-mail'}</Text></View>
-            <View style={styles.inlineCard}><Ionicons name="call-outline" size={16} color={THEME.green} /><Text style={styles.inlineText}>{profile?.telefone ?? producer?.telefone ?? 'Nao informado'}</Text></View>
+            <View style={styles.inlineCard}><Ionicons name="call-outline" size={16} color={THEME.green} /><Text style={styles.inlineText}>{profile?.telefone ?? producer?.telefone ?? 'Não informado'}</Text></View>
           </View>
         </View>
 
@@ -322,9 +324,9 @@ export default function PerfilProprietarioScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cadastro do Proprietario</Text>
           <InfoRow label="Nome" value={displayName} />
-          <InfoRow label="CPF / CNPJ" value={producer?.cpf_cnpj ?? 'Nao informado'} />
-          <InfoRow label="Telefone" value={profile?.telefone ?? producer?.telefone ?? 'Nao informado'} />
-          <InfoRow label="E-mail" value={profile?.email ?? producer?.email ?? user?.email ?? 'Nao informado'} />
+          <InfoRow label="CPF / CNPJ" value={producer?.cpf_cnpj ?? 'Não informado'} />
+          <InfoRow label="Telefone" value={profile?.telefone ?? producer?.telefone ?? 'Não informado'} />
+          <InfoRow label="E-mail" value={profile?.email ?? producer?.email ?? user?.email ?? 'Não informado'} />
         </View>
 
         <View style={styles.section}>
@@ -339,7 +341,7 @@ export default function PerfilProprietarioScreen() {
             properties.map((item) => (
               <View key={item.id} style={styles.propertyCard}>
                 <Text style={styles.propertyName}>{item.nome}</Text>
-                <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio nao informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
+                <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio não informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
                 <View style={styles.propertyFooter}>
                   <Text style={styles.propertyTag}>{propertyStatusLabel(item.status_propriedade)}</Text>
                   <Text style={styles.propertyArea}>{formatArea(Number(item.area_total ?? 0))} ha</Text>

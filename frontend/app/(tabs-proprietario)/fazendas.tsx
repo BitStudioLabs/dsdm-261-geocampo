@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/src/lib/supabase';
@@ -54,11 +55,12 @@ function statusLabel(status: string | null) {
 function leaseLabel(status: string | null) {
   if (status === 'arrendada') return 'Arrendada';
   if (status === 'parcialmente_arrendada') return 'Parcialmente arrendada';
-  if (status === 'nao_arrendada') return 'Nao arrendada';
-  return 'Sem informacao';
+  if (status === 'nao_arrendada') return 'Não arrendada';
+  return 'Sem informação';
 }
 
 export default function ProprietarioFazendasScreen() {
+  const insets = useSafeAreaInsets();
   const { profile, user, refreshProfile } = useAuth();
   const userId = profile?.id ?? user?.id ?? null;
   const [loading, setLoading] = useState(true);
@@ -110,7 +112,7 @@ export default function ProprietarioFazendasScreen() {
 
     const { data: assignmentsData, error: assignmentsError } = await supabase
       .from('atribuicoes')
-      .select('id_propriedade, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
+      .select('id_propriedade, id_instrutor, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
       .in('id_propriedade', baseProperties.map((item) => item.id))
       .eq('ativa', true);
 
@@ -122,6 +124,7 @@ export default function ProprietarioFazendasScreen() {
 
     for (const row of (assignmentsData ?? []) as Array<{
       id_propriedade: number;
+      id_instrutor: string | null;
       usuarios: { nome_completo: string | null } | { nome_completo: string | null }[] | null;
     }>) {
       const current = instrutoresPorPropriedade.get(row.id_propriedade) ?? [];
@@ -130,6 +133,13 @@ export default function ProprietarioFazendasScreen() {
       for (const relatedUser of relatedUsers) {
         if (relatedUser?.nome_completo && !current.includes(relatedUser.nome_completo)) {
           current.push(relatedUser.nome_completo);
+        }
+      }
+
+      if (!relatedUsers.length && row.id_instrutor) {
+        const fallbackLabel = current.length > 0 ? `Instrutor vinculado ${current.length + 1}` : 'Instrutor vinculado';
+        if (!current.includes(fallbackLabel)) {
+          current.push(fallbackLabel);
         }
       }
 
@@ -193,7 +203,7 @@ export default function ProprietarioFazendasScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={THEME.gold} />}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
+        <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
           <Text style={styles.title}>Minhas Fazendas</Text>
           <Text style={styles.subtitle}>Veja as propriedades vinculadas ao seu cadastro e os principais detalhes de cada uma.</Text>
         </View>
@@ -221,7 +231,7 @@ export default function ProprietarioFazendasScreen() {
             <Text style={styles.emptySubtitle}>
               {properties.length
                 ? 'Nenhuma propriedade corresponde ao filtro atual.'
-                : 'Ainda nao existem propriedades vinculadas ao seu cadastro.'}
+                : 'Ainda não existem propriedades vinculadas ao seu cadastro.'}
             </Text>
           </View>
         ) : (
@@ -234,7 +244,7 @@ export default function ProprietarioFazendasScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.propertyName}>{item.nome}</Text>
                   <Text style={styles.propertyMeta}>
-                    {item.municipio_nome ?? 'Municipio nao informado'}
+                    {item.municipio_nome ?? 'Municipio não informado'}
                     {item.uf ? ` - ${item.uf}` : ''}
                   </Text>
                 </View>
@@ -251,7 +261,7 @@ export default function ProprietarioFazendasScreen() {
 
               <View style={styles.infoGrid}>
                 <InfoBox label="Area total" value={`${formatArea(Number(item.area_total ?? 0))} ha`} />
-                <InfoBox label="Contato" value={item.telefone ?? 'Nao informado'} />
+                <InfoBox label="Contato" value={item.telefone ?? 'Não informado'} />
               </View>
 
               <InfoLine
@@ -263,7 +273,7 @@ export default function ProprietarioFazendasScreen() {
                 }
               />
 
-              <InfoLine icon="location-outline" text={item.bairro ?? 'Bairro/zona nao informado'} />
+              <InfoLine icon="location-outline" text={item.bairro ?? 'Bairro/zona não informado'} />
               <InfoLine icon="flag-outline" text={item.referencia ?? 'Sem referencia cadastrada'} />
               <InfoLine icon="navigate-outline" text={item.como_chegar ?? 'Sem instrucoes de acesso cadastradas'} />
             </View>
