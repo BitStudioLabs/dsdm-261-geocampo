@@ -482,7 +482,7 @@ export default function PropriedadesScreen() {
   const selectedStatus = getStatusMeta(selectedProperty?.status_propriedade ?? null);
   const selectedPropertyHasOwner = !!selectedProperty?.produtores?.nome;
 
-  useEffect(() => {
+  const resetOwnerState = useCallback(() => {
     setOwnerFormOpen(false);
     setOwnerExists(null);
     setOwnerSearch('');
@@ -490,7 +490,11 @@ export default function PropriedadesScreen() {
     setOwnerFeedback(null);
     setOwnerErrors({});
     setOwnerForm({ nome: '', email: '', telefone: '', cpfCnpj: '', senha: '' });
-  }, [selectedId]);
+  }, []);
+
+  useEffect(() => {
+    resetOwnerState();
+  }, [resetOwnerState, selectedId]);
 
   useEffect(() => {
     if (!ownerFormOpen) {
@@ -725,7 +729,7 @@ export default function PropriedadesScreen() {
         throw propertyError;
       }
 
-      await loadProperties();
+      await Promise.all([loadProperties(), loadMapDataset()]);
       setSelectedId(selectedProperty.id);
       setOwnerFeedback({ type: 'ok', msg: 'Proprietario vinculado com sucesso a esta propriedade.' });
       setOwnerFormOpen(false);
@@ -854,16 +858,20 @@ export default function PropriedadesScreen() {
             <InfoRow icon="flag" label="Referencia" value={selectedProperty.referencia ?? 'Não informada'} />
             <InfoRow icon="route" label="Como chegar" value={selectedProperty.como_chegar ?? 'Não informado'} />
 
-            {!selectedPropertyHasOwner ? (
+            {selectedProperty ? (
               <View style={styles.ownerCtaCard}>
                 <View style={styles.ownerCtaHeader}>
                   <View style={styles.ownerCtaIcon}>
                     <FontAwesome6 name="user-plus" size={12} color={THEME.gold} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.ownerCtaTitle}>Esta propriedade ainda não tem proprietario rural</Text>
+                    <Text style={styles.ownerCtaTitle}>
+                      {selectedPropertyHasOwner ? 'Alterar proprietario rural' : 'Adicionar proprietario rural'}
+                    </Text>
                     <Text style={styles.ownerCtaText}>
-                      Voce pode vincular um proprietario ja cadastrado ou criar um novo login com perfil de proprietario.
+                      {selectedPropertyHasOwner
+                        ? 'Voce pode substituir o proprietario atual vinculando um usuario proprietario rural ja cadastrado ou criando um novo acesso.'
+                        : 'Voce pode vincular um proprietario ja cadastrado ou criar um novo login com perfil de proprietario.'}
                     </Text>
                   </View>
                 </View>
@@ -871,7 +879,9 @@ export default function PropriedadesScreen() {
                 {!ownerFormOpen ? (
                   <TouchableOpacity style={styles.ownerPrimaryButton} onPress={() => setOwnerFormOpen(true)} activeOpacity={0.85}>
                     <FontAwesome6 name="user-plus" size={12} color={THEME.bg} />
-                    <Text style={styles.ownerPrimaryButtonText}>Adicionar proprietario rural</Text>
+                    <Text style={styles.ownerPrimaryButtonText}>
+                      {selectedPropertyHasOwner ? 'Trocar proprietario rural' : 'Adicionar proprietario rural'}
+                    </Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.ownerForm}>
@@ -992,7 +1002,7 @@ export default function PropriedadesScreen() {
                     ) : null}
 
                     <View style={styles.ownerActions}>
-                      <TouchableOpacity style={styles.ownerGhostButton} onPress={() => setOwnerFormOpen(false)} activeOpacity={0.85}>
+                      <TouchableOpacity style={styles.ownerGhostButton} onPress={resetOwnerState} activeOpacity={0.85}>
                         <Text style={styles.ownerGhostButtonText}>Cancelar</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.ownerPrimaryButton} onPress={handleAttachOwner} activeOpacity={0.85} disabled={savingOwner}>
