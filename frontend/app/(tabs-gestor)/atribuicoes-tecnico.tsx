@@ -6,54 +6,18 @@ import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
+import { ATRIBUICOES_PAGE_SIZE_OPTIONS, ATRIBUICOES_TECNICO_THEME as THEME } from '@/features/atribuicoes-tecnico/constants';
+import { styles } from '@/features/atribuicoes-tecnico/styles';
+import type { AtribuicaoRow, AtribuicoesFeedback, InstrutorOption, PropriedadeOption } from '@/features/atribuicoes-tecnico/types';
 import { supabase } from '@/src/lib/supabase';
 
-const THEME = {
-  bg: '#0a1f0d',
-  card: 'rgba(10,31,13,0.88)',
-  border: 'rgba(77,200,90,0.14)',
-  borderStrong: 'rgba(77,200,90,0.35)',
-  white: '#ffffff',
-  offWhite: '#f0f8f0',
-  muted: 'rgba(255,255,255,0.55)',
-  green: '#4dc85a',
-  gold: '#f5c842',
-  blue: '#5b9cff',
-  red: '#ff6b6b',
-  inputBg: 'rgba(255,255,255,0.06)',
-  inputBorder: 'rgba(255,255,255,0.1)',
-};
-
-type InstrutorOption = {
-  id: string;
-  nome_completo: string | null;
-  email: string | null;
-  ativo: boolean;
-};
-
-type PropriedadeOption = {
-  id: number;
-  nome: string | null;
-  municipio_nome: string | null;
-  uf: string | null;
-  status_propriedade: 'ativo' | 'inativo' | 'em_analise' | null;
-};
-
-type AtribuicaoRow = {
-  id: number;
-  id_propriedade: number;
-  ativa: boolean;
-};
-
 export default function AtribuicoesTecnicoScreen() {
-  const PAGE_SIZE_OPTIONS = [8, 16, 24];
   const params = useLocalSearchParams<{ userId?: string }>();
   const [instrutores, setInstrutores] = useState<InstrutorOption[]>([]);
   const [propriedades, setPropriedades] = useState<PropriedadeOption[]>([]);
@@ -68,7 +32,7 @@ export default function AtribuicoesTecnicoScreen() {
   const [instrutoresPageSize, setInstrutoresPageSize] = useState(8);
   const [propriedadesPage, setPropriedadesPage] = useState(1);
   const [propriedadesPageSize, setPropriedadesPageSize] = useState(8);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<AtribuicoesFeedback>(null);
 
   useEffect(() => {
     if (!feedback) {
@@ -89,14 +53,14 @@ export default function AtribuicoesTecnicoScreen() {
 
         if (storedInstrutores) {
           const parsed = parseInt(storedInstrutores, 10);
-          if (PAGE_SIZE_OPTIONS.includes(parsed)) {
+          if ((ATRIBUICOES_PAGE_SIZE_OPTIONS as readonly number[]).includes(parsed)) {
             setInstrutoresPageSize(parsed);
           }
         }
 
         if (storedPropriedades) {
           const parsed = parseInt(storedPropriedades, 10);
-          if (PAGE_SIZE_OPTIONS.includes(parsed)) {
+          if ((ATRIBUICOES_PAGE_SIZE_OPTIONS as readonly number[]).includes(parsed)) {
             setPropriedadesPageSize(parsed);
           }
         }
@@ -477,7 +441,7 @@ export default function AtribuicoesTecnicoScreen() {
                 : `Mostrando ${(instrutoresPage - 1) * instrutoresPageSize + 1} a ${Math.min(instrutoresPage * instrutoresPageSize, filteredInstrutores.length)} de ${filteredInstrutores.length}`}
             </Text>
             <View style={styles.pageSizeControls}>
-              {PAGE_SIZE_OPTIONS.map((size) => (
+              {ATRIBUICOES_PAGE_SIZE_OPTIONS.map((size: number) => (
                 <TouchableOpacity
                   key={`instrutores-${size}`}
                   style={[styles.pageSizeButton, instrutoresPageSize === size && styles.pageSizeButtonActive]}
@@ -587,7 +551,7 @@ export default function AtribuicoesTecnicoScreen() {
                 : `Mostrando ${(propriedadesPage - 1) * propriedadesPageSize + 1} a ${Math.min(propriedadesPage * propriedadesPageSize, filteredPropriedades.length)} de ${filteredPropriedades.length}`}
             </Text>
             <View style={styles.pageSizeControls}>
-              {PAGE_SIZE_OPTIONS.map((size) => (
+              {ATRIBUICOES_PAGE_SIZE_OPTIONS.map((size: number) => (
                 <TouchableOpacity
                   key={`propriedades-${size}`}
                   style={[styles.pageSizeButton, propriedadesPageSize === size && styles.pageSizeButtonActive]}
@@ -696,248 +660,3 @@ export default function AtribuicoesTecnicoScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: THEME.bg },
-  content: { padding: 20, paddingTop: 56, paddingBottom: 110, gap: 16 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  title: { color: THEME.white, fontSize: 28, fontWeight: '800', marginBottom: 4 },
-  subtitle: { color: THEME.muted, fontSize: 14, lineHeight: 20 },
-  loadingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 16,
-  },
-  loadingText: { color: THEME.muted, fontSize: 13 },
-  sectionCard: {
-    backgroundColor: THEME.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    padding: 16,
-    gap: 12,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  currentLinksCard: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    padding: 14,
-    gap: 10,
-  },
-  currentLinksHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  currentLinksTitle: {
-    color: THEME.white,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  currentLinksMeta: {
-    color: THEME.muted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  currentLinksEmpty: {
-    color: THEME.muted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  linkedPropertyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12,
-    padding: 12,
-  },
-  linkedPropertyCopy: {
-    flex: 1,
-  },
-  linkedPropertyTitle: {
-    color: THEME.white,
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  linkedPropertyMeta: {
-    color: THEME.muted,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  unlinkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,107,107,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,107,107,0.28)',
-  },
-  unlinkButtonText: {
-    color: THEME.white,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  sectionTitle: { color: THEME.white, fontSize: 17, fontWeight: '800' },
-  sectionSubtitle: { color: THEME.muted, fontSize: 13, lineHeight: 18 },
-  summaryPill: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(77,200,90,0.14)',
-  },
-  summaryPillText: { color: THEME.offWhite, fontSize: 12, fontWeight: '700' },
-  paginationToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  paginationText: { color: THEME.offWhite, fontSize: 12, opacity: 0.9, flex: 1 },
-  pageSizeControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pageSizeButton: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  pageSizeButtonActive: {
-    backgroundColor: 'rgba(77,200,90,0.18)',
-    borderColor: THEME.green,
-  },
-  pageSizeText: { color: THEME.white, fontSize: 12, fontWeight: '700' },
-  pageSizeTextActive: { color: THEME.white },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: THEME.inputBg,
-    borderWidth: 1,
-    borderColor: THEME.inputBorder,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  searchInput: { flex: 1, color: THEME.white, fontSize: 14, padding: 0 },
-  optionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    padding: 12,
-  },
-  optionCardActive: {
-    backgroundColor: 'rgba(91,156,255,0.14)',
-    borderColor: 'rgba(91,156,255,0.28)',
-  },
-  optionCopy: { flex: 1 },
-  optionTitle: { color: THEME.white, fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  optionMeta: { color: THEME.muted, fontSize: 12, lineHeight: 17 },
-  propertyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    padding: 12,
-  },
-  propertyCardActive: {
-    backgroundColor: 'rgba(77,200,90,0.12)',
-    borderColor: 'rgba(77,200,90,0.28)',
-  },
-  checkBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkBoxActive: {
-    backgroundColor: THEME.green,
-    borderColor: THEME.green,
-  },
-  pageNumberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 6,
-    flexWrap: 'wrap',
-  },
-  pageNavButton: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  pageNavButtonDisabled: { opacity: 0.4 },
-  pageNavText: { color: THEME.white, fontSize: 12, fontWeight: '700' },
-  pageNavTextDisabled: { color: 'rgba(255,255,255,0.55)' },
-  pageNumberButton: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-  },
-  pageNumberButtonActive: {
-    backgroundColor: 'rgba(77,200,90,0.18)',
-    borderColor: THEME.green,
-  },
-  pageNumberText: { color: THEME.white, fontSize: 12, fontWeight: '700' },
-  pageNumberTextActive: { color: THEME.white },
-  pageDots: { color: THEME.offWhite, fontSize: 14, paddingHorizontal: 6 },
-  statusBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  statusActive: { backgroundColor: 'rgba(77,200,90,0.18)' },
-  statusInactive: { backgroundColor: 'rgba(255,107,107,0.18)' },
-  statusText: { color: THEME.white, fontSize: 11, fontWeight: '700' },
-  feedbackBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1 },
-  feedbackSuccess: { backgroundColor: 'rgba(77,200,90,0.15)', borderColor: 'rgba(77,200,90,0.35)' },
-  feedbackError: { backgroundColor: 'rgba(255,107,107,0.15)', borderColor: 'rgba(255,107,107,0.35)' },
-  feedbackText: { color: THEME.white, fontSize: 13, fontWeight: '600', lineHeight: 18 },
-  saveButton: {
-    marginTop: 4,
-    backgroundColor: THEME.blue,
-    borderRadius: 14,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  saveButtonText: { color: THEME.white, fontSize: 14, fontWeight: '800' },
-});

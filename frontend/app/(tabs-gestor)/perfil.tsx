@@ -7,11 +7,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Platform,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -20,73 +18,15 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { GestorProfileStar } from '@/features/gestor-perfil/components/GestorProfileStar';
+import { GESTOR_PERFIL_STARS as STARS, GESTOR_PERFIL_THEME as THEME } from '@/features/gestor-perfil/constants';
+import { styles } from '@/features/gestor-perfil/styles';
+import type { GestorProfileFeedback, GestorStats } from '@/features/gestor-perfil/types';
 import { supabase } from '@/src/lib/supabase';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-
-const THEME = {
-  skyTop: '#0a1f0d',
-  leafLight: '#4dc85a',
-  gold: '#f5c842',
-  white: '#ffffff',
-  offWhite: '#f0f8f0',
-  textMuted: 'rgba(255,255,255,0.55)',
-  cardBg: 'rgba(10,31,13,0.85)',
-  error: '#ff6b6b',
-  blue: '#5b9cff',
-  inputBg: 'rgba(255,255,255,0.06)',
-  inputBorder: 'rgba(255,255,255,0.1)',
-};
-
-const STARS = Array.from({ length: 20 }, (_, i) => ({
-  id: i,
-  x: Math.random() * SCREEN_W,
-  y: Math.random() * (SCREEN_H * 0.2),
-  size: Math.random() * 2 + 0.8,
-  delay: Math.random() * 2000,
-}));
-
-type GestorStats = {
-  totalInstrutores: number;
-  alertasFraude: number;
-  visitasMes: number;
-  notificacoesNaoLidas: number;
-};
-
-function Star({ x, y, size, delay }: { x: number; y: number; size: number; delay: number }) {
-  const opacity = useSharedValue(0.3);
-  useEffect(() => {
-    opacity.value = withDelay(
-      delay,
-      withRepeat(withSequence(withTiming(0.9, { duration: 1200 }), withTiming(0.3, { duration: 1200 })), -1, true)
-    );
-  }, [delay, opacity]);
-  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return (
-    <Animated.View
-      style={[
-        {
-          position: 'absolute',
-          left: x,
-          top: y,
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: 'rgba(255,255,255,0.85)',
-        },
-        style,
-      ]}
-    />
-  );
-}
 
 export default function PerfilGestorScreen() {
   const { logout, profile, refreshProfile, user } = useAuth();
@@ -101,7 +41,7 @@ export default function PerfilGestorScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error'; scope: 'profile' | 'general' } | null>(null);
+  const [feedback, setFeedback] = useState<GestorProfileFeedback | null>(null);
   const [form, setForm] = useState({
     nomeCompleto: '',
     telefone: '',
@@ -421,7 +361,7 @@ export default function PerfilGestorScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.skyBg}>
-        {STARS.map((star) => <Star key={star.id} x={star.x} y={star.y} size={star.size} delay={star.delay} />)}
+        {STARS.map((star) => <GestorProfileStar key={star.id} x={star.x} y={star.y} size={star.size} delay={star.delay} />)}
         <View style={styles.moon}>
           <View style={styles.moonInner}>
             <View style={[styles.crater, { width: 6, height: 6, top: 8, left: 10 }]} />
@@ -610,62 +550,3 @@ export default function PerfilGestorScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: THEME.skyTop },
-  skyBg: { position: 'absolute', top: 0, left: 0, right: 0, height: SCREEN_H * 0.25, backgroundColor: THEME.skyTop },
-  moon: { position: 'absolute', top: 45, right: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: '#fffbe0', shadowColor: '#fffbe0', shadowOpacity: 0.8, shadowRadius: 18, elevation: 8 },
-  moonInner: { width: '100%', height: '100%', borderRadius: 18, overflow: 'hidden' },
-  crater: { position: 'absolute', backgroundColor: 'rgba(200,190,150,0.4)', borderRadius: 50 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 110 },
-  header: { alignItems: 'center', marginBottom: 20 },
-  avatarBox: { width: 80, height: 80, borderRadius: 24, backgroundColor: 'rgba(91,156,255,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 2, borderColor: 'rgba(91,156,255,0.3)' },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 22 },
-  avatarText: { fontSize: 26, fontWeight: '800', color: THEME.blue },
-  userName: { fontSize: 24, fontWeight: '700', color: THEME.white, marginBottom: 4, textAlign: 'center' },
-  userEmail: { fontSize: 14, color: THEME.textMuted, marginBottom: 12, textAlign: 'center' },
-  roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(91,156,255,0.15)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, gap: 8 },
-  roleText: { fontSize: 12, fontWeight: '600', color: THEME.blue },
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
-  statCard: { flex: 1, backgroundColor: THEME.cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 10, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(77,200,90,0.15)' },
-  statValue: { fontSize: 22, fontWeight: '800', color: THEME.white, marginBottom: 4 },
-  statLabel: { fontSize: 11, color: THEME.textMuted, textAlign: 'center' },
-  instCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.cardBg, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(77,200,90,0.15)', gap: 14 },
-  instIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(77,200,90,0.15)', alignItems: 'center', justifyContent: 'center' },
-  instInfo: { flex: 1 },
-  instName: { fontSize: 15, fontWeight: '700', color: THEME.white, marginBottom: 4 },
-  instCode: { fontSize: 12, color: THEME.textMuted },
-  sectionCard: { backgroundColor: THEME.cardBg, borderRadius: 18, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(77,200,90,0.15)' },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  sectionTitle: { color: THEME.white, fontSize: 16, fontWeight: '700' },
-  sectionAction: { color: THEME.leafLight, fontSize: 13, fontWeight: '700' },
-  fieldLabel: { color: THEME.textMuted, fontSize: 12, marginBottom: 6, marginTop: 10 },
-  input: { backgroundColor: THEME.inputBg, borderWidth: 1, borderColor: THEME.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: THEME.white, fontSize: 14 },
-  inputDisabled: { opacity: 0.75 },
-  readonlyText: { color: THEME.offWhite, fontSize: 14 },
-  photoUploadCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: THEME.inputBg, borderWidth: 1, borderColor: THEME.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, marginTop: 2 },
-  photoUploadIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(77,200,90,0.15)' },
-  photoUploadCopy: { flex: 1 },
-  photoUploadTitle: { color: THEME.white, fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  photoUploadDesc: { color: THEME.textMuted, fontSize: 12, lineHeight: 16 },
-  editActionsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  cancelButton: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 13, backgroundColor: 'rgba(255,255,255,0.08)' },
-  cancelButtonText: { color: THEME.white, fontWeight: '700' },
-  saveButton: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 13, backgroundColor: THEME.leafLight },
-  saveButtonText: { color: THEME.white, fontWeight: '800' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' },
-  infoLabel: { color: THEME.textMuted, fontSize: 13, flex: 1, marginRight: 12 },
-  infoValue: { color: THEME.offWhite, fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
-  utilityRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' },
-  utilityIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(77,200,90,0.15)', alignItems: 'center', justifyContent: 'center' },
-  utilityCopy: { flex: 1 },
-  utilityTitle: { color: THEME.white, fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  utilityDesc: { color: THEME.textMuted, fontSize: 12, lineHeight: 16 },
-  feedbackBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12, borderWidth: 1 },
-  feedbackSuccess: { backgroundColor: 'rgba(77,200,90,0.15)', borderColor: 'rgba(77,200,90,0.35)' },
-  feedbackError: { backgroundColor: 'rgba(255,107,107,0.15)', borderColor: 'rgba(255,107,107,0.35)' },
-  feedbackInlineText: { color: THEME.white, fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  feedbackGeneral: { marginBottom: 16 },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,107,107,0.15)', borderRadius: 16, paddingVertical: 16, gap: 10, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' },
-  logoutText: { fontSize: 15, fontWeight: '700', color: THEME.error },
-  version: { textAlign: 'center', fontSize: 12, color: THEME.textMuted, marginTop: 20 },
-});

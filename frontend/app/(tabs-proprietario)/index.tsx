@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/src/lib/supabase';
@@ -61,6 +62,7 @@ function statusLabel(status: string | null) {
 }
 
 export default function ProprietarioHomeScreen() {
+  const insets = useSafeAreaInsets();
   const { profile, user, refreshProfile } = useAuth();
   const userId = profile?.id ?? user?.id ?? null;
   const [loading, setLoading] = useState(true);
@@ -125,7 +127,7 @@ export default function ProprietarioHomeScreen() {
     const { data: assignmentsData, error: assignmentsError } = baseProperties.length
       ? await supabase
           .from('atribuicoes')
-          .select('id_propriedade, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
+          .select('id_propriedade, id_instrutor, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
           .in('id_propriedade', baseProperties.map((item) => item.id))
           .eq('ativa', true)
       : { data: [], error: null as any };
@@ -138,6 +140,7 @@ export default function ProprietarioHomeScreen() {
 
     for (const row of (assignmentsData ?? []) as Array<{
       id_propriedade: number;
+      id_instrutor: string | null;
       usuarios: { nome_completo: string | null } | { nome_completo: string | null }[] | null;
     }>) {
       const current = instrutoresPorPropriedade.get(row.id_propriedade) ?? [];
@@ -146,6 +149,13 @@ export default function ProprietarioHomeScreen() {
       for (const relatedUser of relatedUsers) {
         if (relatedUser?.nome_completo && !current.includes(relatedUser.nome_completo)) {
           current.push(relatedUser.nome_completo);
+        }
+      }
+
+      if (!relatedUsers.length && row.id_instrutor) {
+        const fallbackLabel = current.length > 0 ? `Instrutor vinculado ${current.length + 1}` : 'Instrutor vinculado';
+        if (!current.includes(fallbackLabel)) {
+          current.push(fallbackLabel);
         }
       }
 
@@ -206,7 +216,10 @@ export default function ProprietarioHomeScreen() {
     [state.properties]
   );
 
-  const lastProperty = state.properties[0] ?? null;
+  const highlightedProperty = useMemo(
+    () => state.properties.find((item) => item.instrutores.length > 0) ?? state.properties[0] ?? null,
+    [state.properties]
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -215,7 +228,7 @@ export default function ProprietarioHomeScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={THEME.gold} />}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
+        <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
           <Text style={styles.eyebrow}>Area do Proprietario</Text>
           <Text style={styles.title}>Olá, {displayName.split(' ')[0] ?? 'produtor'}</Text>
           <Text style={styles.subtitle}>
@@ -247,7 +260,7 @@ export default function ProprietarioHomeScreen() {
               <ActivityIndicator color={THEME.green} />
               <Text style={styles.loadingText}>Carregando informacoes...</Text>
             </View>
-          ) : !lastProperty ? (
+          ) : !highlightedProperty ? (
             <View style={styles.emptyCard}>
               <Ionicons name="home-outline" size={22} color={THEME.gold} />
               <Text style={styles.emptyTitle}>Nenhuma fazenda vinculada</Text>
@@ -257,20 +270,20 @@ export default function ProprietarioHomeScreen() {
             </View>
           ) : (
             <View style={styles.highlightCard}>
-              <Text style={styles.highlightTitle}>{lastProperty.nome}</Text>
+              <Text style={styles.highlightTitle}>{highlightedProperty.nome}</Text>
               <Text style={styles.highlightMeta}>
-                {lastProperty.municipio_nome ?? 'Municipio nao informado'}
-                {lastProperty.uf ? ` - ${lastProperty.uf}` : ''}
+                {highlightedProperty.municipio_nome ?? 'Municipio não informado'}
+                {highlightedProperty.uf ? ` - ${highlightedProperty.uf}` : ''}
               </Text>
               <View style={styles.highlightRow}>
                 <View style={styles.highlightPill}>
-                  <Text style={styles.highlightPillText}>{statusLabel(lastProperty.status_propriedade)}</Text>
+                  <Text style={styles.highlightPillText}>{statusLabel(highlightedProperty.status_propriedade)}</Text>
                 </View>
-                <Text style={styles.highlightArea}>{formatArea(Number(lastProperty.area_total ?? 0))} ha</Text>
+                <Text style={styles.highlightArea}>{formatArea(Number(highlightedProperty.area_total ?? 0))} ha</Text>
               </View>
               <Text style={styles.highlightInstructor}>
-                {lastProperty.instrutores.length
-                  ? `Instrutor responsavel: ${lastProperty.instrutores.join(', ')}`
+                {highlightedProperty.instrutores.length
+                  ? `Instrutor responsavel: ${highlightedProperty.instrutores.join(', ')}`
                   : 'Nenhum instrutor vinculado no momento'}
               </Text>
             </View>
