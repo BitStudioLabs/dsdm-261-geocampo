@@ -216,7 +216,10 @@ export default function ProprietarioHomeScreen() {
     [state.properties]
   );
 
-  const lastProperty = state.properties[0] ?? null;
+  const highlightedProperty = useMemo(
+    () => state.properties.find((item) => item.instrutores.length > 0) ?? state.properties[0] ?? null,
+    [state.properties]
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -257,7 +260,7 @@ export default function ProprietarioHomeScreen() {
               <ActivityIndicator color={THEME.green} />
               <Text style={styles.loadingText}>Carregando informacoes...</Text>
             </View>
-          ) : !lastProperty ? (
+          ) : !highlightedProperty ? (
             <View style={styles.emptyCard}>
               <Ionicons name="home-outline" size={22} color={THEME.gold} />
               <Text style={styles.emptyTitle}>Nenhuma fazenda vinculada</Text>
@@ -267,20 +270,20 @@ export default function ProprietarioHomeScreen() {
             </View>
           ) : (
             <View style={styles.highlightCard}>
-              <Text style={styles.highlightTitle}>{lastProperty.nome}</Text>
+              <Text style={styles.highlightTitle}>{highlightedProperty.nome}</Text>
               <Text style={styles.highlightMeta}>
-                {lastProperty.municipio_nome ?? 'Municipio não informado'}
-                {lastProperty.uf ? ` - ${lastProperty.uf}` : ''}
+                {highlightedProperty.municipio_nome ?? 'Municipio não informado'}
+                {highlightedProperty.uf ? ` - ${highlightedProperty.uf}` : ''}
               </Text>
               <View style={styles.highlightRow}>
                 <View style={styles.highlightPill}>
-                  <Text style={styles.highlightPillText}>{statusLabel(lastProperty.status_propriedade)}</Text>
+                  <Text style={styles.highlightPillText}>{statusLabel(highlightedProperty.status_propriedade)}</Text>
                 </View>
-                <Text style={styles.highlightArea}>{formatArea(Number(lastProperty.area_total ?? 0))} ha</Text>
+                <Text style={styles.highlightArea}>{formatArea(Number(highlightedProperty.area_total ?? 0))} ha</Text>
               </View>
               <Text style={styles.highlightInstructor}>
-                {lastProperty.instrutores.length
-                  ? `Instrutor responsavel: ${lastProperty.instrutores.join(', ')}`
+                {highlightedProperty.instrutores.length
+                  ? `Instrutor responsavel: ${highlightedProperty.instrutores.join(', ')}`
                   : 'Nenhum instrutor vinculado no momento'}
               </Text>
             </View>

@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
@@ -36,7 +36,15 @@ const THEME = {
 };
 
 type Producer = { id: number; nome: string | null; telefone: string | null; email: string | null; cpf_cnpj: string | null };
-type Property = { id: number; nome: string; municipio_nome: string | null; uf: string | null; area_total: number | null; status_propriedade: string | null };
+type Property = {
+  id: number;
+  nome: string;
+  municipio_nome: string | null;
+  uf: string | null;
+  area_total: number | null;
+  status_propriedade: string | null;
+  instrutores: string[];
+};
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
@@ -86,6 +94,7 @@ export default function PerfilProprietarioScreen() {
   const [visitsCount, setVisitsCount] = useState(0);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const hasFocusedOnceRef = useRef(false);
 
   const avatarKey = userId ? `profile-avatar-path:${userId}` : null;
 
@@ -115,10 +124,13 @@ export default function PerfilProprietarioScreen() {
 
     if (propertiesError) throw propertiesError;
 
-    const propertyList = (propertiesData as Property[] | null) ?? [];
-    setProperties(propertyList);
+    const baseProperties = ((propertiesData as Omit<Property, 'instrutores'>[] | null) ?? []).map((item) => ({
+      ...item,
+      instrutores: [],
+    }));
+    setProperties(baseProperties);
 
-    if (!propertyList.length) {
+    if (!baseProperties.length) {
       setVisitsCount(0);
       return;
     }
@@ -126,10 +138,53 @@ export default function PerfilProprietarioScreen() {
     const { count, error: visitsError } = await supabase
       .from('visitas')
       .select('*', { count: 'exact', head: true })
-      .in('id_propriedade', propertyList.map((item) => item.id));
+      .in('id_propriedade', baseProperties.map((item) => item.id));
 
     if (visitsError) throw visitsError;
     setVisitsCount(count ?? 0);
+
+    const { data: assignmentsData, error: assignmentsError } = await supabase
+      .from('atribuicoes')
+      .select('id_propriedade, id_instrutor, usuarios!atribuicoes_id_instrutor_fkey(nome_completo)')
+      .in('id_propriedade', baseProperties.map((item) => item.id))
+      .eq('ativa', true);
+
+    if (assignmentsError) throw assignmentsError;
+
+    const instrutoresPorPropriedade = new Map<number, string[]>();
+    for (const row of (assignmentsData as Array<{
+      id_propriedade: number | null;
+      id_instrutor: string | null;
+      usuarios?: { nome_completo?: string | null } | Array<{ nome_completo?: string | null }> | null;
+    }> | null) ?? []) {
+      if (!row.id_propriedade) continue;
+
+      const listaAtual = instrutoresPorPropriedade.get(row.id_propriedade) ?? [];
+      const relatedUsers = Array.isArray(row.usuarios) ? row.usuarios : row.usuarios ? [row.usuarios] : [];
+
+      for (const relatedUser of relatedUsers) {
+        const nomeInstrutor = relatedUser?.nome_completo?.trim();
+        if (nomeInstrutor && !listaAtual.includes(nomeInstrutor)) {
+          listaAtual.push(nomeInstrutor);
+        }
+      }
+
+      if (!relatedUsers.length && row.id_instrutor) {
+        const fallbackLabel = listaAtual.length > 0 ? `Instrutor vinculado ${listaAtual.length + 1}` : 'Instrutor vinculado';
+        if (!listaAtual.includes(fallbackLabel)) {
+          listaAtual.push(fallbackLabel);
+        }
+      }
+
+      instrutoresPorPropriedade.set(row.id_propriedade, listaAtual);
+    }
+
+    setProperties(
+      baseProperties.map((item) => ({
+        ...item,
+        instrutores: instrutoresPorPropriedade.get(item.id) ?? [],
+      })),
+    );
   }, [userId]);
 
   useEffect(() => {
@@ -149,6 +204,35 @@ export default function PerfilProprietarioScreen() {
       active = false;
     };
   }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+
+      let active = true;
+
+      async function reloadOnFocus() {
+        try {
+          await loadData();
+        } catch (error) {
+          console.error('Erro ao atualizar perfil do proprietario ao focar:', error);
+        } finally {
+          if (active) {
+            setLoading(false);
+          }
+        }
+      }
+
+      void reloadOnFocus();
+
+      return () => {
+        active = false;
+      };
+    }, [loadData])
+  );
 
   useEffect(() => {
     if (!avatarKey) return;
@@ -342,6 +426,11 @@ export default function PerfilProprietarioScreen() {
               <View key={item.id} style={styles.propertyCard}>
                 <Text style={styles.propertyName}>{item.nome}</Text>
                 <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio não informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
+                <Text style={styles.propertyInstructor}>
+                  {item.instrutores.length
+                    ? `Instrutor${item.instrutores.length > 1 ? 'es' : ''}: ${item.instrutores.join(', ')}`
+                    : 'Nenhum instrutor vinculado no momento'}
+                </Text>
                 <View style={styles.propertyFooter}>
                   <Text style={styles.propertyTag}>{propertyStatusLabel(item.status_propriedade)}</Text>
                   <Text style={styles.propertyArea}>{formatArea(Number(item.area_total ?? 0))} ha</Text>
@@ -436,6 +525,7 @@ const styles = StyleSheet.create({
   propertyCard: { marginTop: 10, borderRadius: 18, backgroundColor: colors.cardMuted, borderWidth: 1, borderColor: THEME.border, padding: 14 },
   propertyName: { color: colors.textDark, fontSize: 15, fontWeight: '800', marginBottom: 4 },
   propertyMeta: { color: colors.textMuted, fontSize: 12, marginBottom: 10 },
+  propertyInstructor: { color: colors.textDark, fontSize: 12, lineHeight: 18, marginBottom: 10 },
   propertyFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   propertyTag: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: THEME.border, color: colors.textDark, fontSize: 12, fontWeight: '700' },
   propertyArea: { color: colors.textDark, fontSize: 13, fontWeight: '800' },
