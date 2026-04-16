@@ -1,10 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect } from 'react';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as ImagePicker from 'expo-image-picker';
 import {
-  Alert,
   Dimensions,
   Modal,
   RefreshControl,
@@ -18,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -30,8 +25,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/src/lib/supabase';
+import { SectionCard } from '@/features/instrutor/components/SectionCard';
+import { useInstructorProfile } from '@/features/instrutor/hooks/useInstructorProfile';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -51,35 +46,6 @@ const THEME = {
   textMuted: 'rgba(240, 247, 241, 0.55)',
 };
 
-type ProfileStats = {
-  visitasMes: number;
-  atribuidas: number;
-  concluidas: number;
-};
-
-const PREFERENCIAS = [
-  {
-    id: '1',
-    title: 'Região de atuação',
-    icon: 'navigate-circle-outline',
-  },
-  {
-    id: '2',
-    title: 'Notificações',
-    icon: 'notifications-outline',
-  },
-  {
-    id: '3',
-    title: 'Sincronização offline',
-    icon: 'cloud-done-outline',
-  },
-  {
-    id: '4',
-    title: 'Segurança da conta',
-    icon: 'shield-checkmark-outline',
-  },
-] as const;
-
 const STARS = Array.from({ length: 20 }, (_, i) => ({
   id: i,
   x: Math.random() * SCREEN_W,
@@ -96,52 +62,6 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
   delay: i * 350,
   size: 3 + Math.random() * 2,
 }));
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) {
-      return message;
-    }
-  }
-
-  return 'Erro desconhecido.';
-}
-
-function base64ToArrayBuffer(base64: string) {
-  const binaryString = globalThis.atob(base64);
-  const length = binaryString.length;
-  const bytes = new Uint8Array(length);
-
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  return bytes.buffer;
-}
-
-function extractAvatarPath(value: string) {
-  const publicMarker = '/storage/v1/object/public/avatares/';
-  const signMarker = '/storage/v1/object/sign/avatares/';
-
-  if (value.includes(publicMarker)) {
-    return decodeURIComponent(value.split(publicMarker)[1]?.split('?')[0] ?? '');
-  }
-
-  if (value.includes(signMarker)) {
-    return decodeURIComponent(value.split(signMarker)[1]?.split('?')[0] ?? '');
-  }
-
-  return value;
-}
-
-function getAvatarStorageKey(userId: string) {
-  return `profile-avatar-path:${userId}`;
-}
 
 function AnimatedStar({ star }: { star: (typeof STARS)[0] }) {
   const twinkle = useSharedValue(star.opacity);
@@ -236,441 +156,36 @@ function Firefly({
 }
 
 export default function PerfilScreen() {
-  const { logout, profile, refreshProfile, user } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [editVisible, setEditVisible] = useState(false);
-  const [photoOptionsVisible, setPhotoOptionsVisible] = useState(false);
-  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [avatarStoragePath, setAvatarStoragePath] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [stats, setStats] = useState<ProfileStats>({
-    visitasMes: 0,
-    atribuidas: 0,
-    concluidas: 0,
-  });
-
-  const loadStats = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      setStats({
-        visitasMes: 0,
-        atribuidas: 0,
-        concluidas: 0,
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const [visitasMesRes, atribuicoesRes, concluidasRes] = await Promise.all([
-      supabase
-        .from('visitas')
-        .select('*', { count: 'exact', head: true })
-        .eq('id_instrutor', currentUserId)
-        .gte('criado_em', startOfMonth.toISOString()),
-      supabase
-        .from('atribuicoes')
-        .select('*', { count: 'exact', head: true })
-        .eq('id_instrutor', currentUserId)
-        .eq('ativa', true),
-      supabase
-        .from('visitas')
-        .select('*', { count: 'exact', head: true })
-        .eq('id_instrutor', currentUserId),
-    ]);
-
-    if (visitasMesRes.error) {
-      throw visitasMesRes.error;
-    }
-
-    if (atribuicoesRes.error) {
-      throw atribuicoesRes.error;
-    }
-
-    if (concluidasRes.error) {
-      throw concluidasRes.error;
-    }
-
-    setStats({
-      visitasMes: visitasMesRes.count ?? 0,
-      atribuidas: atribuicoesRes.count ?? 0,
-      concluidas: concluidasRes.count ?? 0,
-    });
-  }, [profile?.id, user?.id]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function run() {
-      setIsLoading(true);
-      try {
-        await loadStats();
-      } catch (error) {
-        console.error('Erro ao carregar perfil do instrutor:', error);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    run();
-
-    return () => {
-      mounted = false;
-    };
-  }, [loadStats]);
-
-  useEffect(() => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      return;
-    }
-
-    const userId = currentUserId;
-
-    let cancelled = false;
-
-    async function hydrateAvatarPath() {
-      try {
-        const savedPath = await AsyncStorage.getItem(getAvatarStorageKey(userId));
-
-        if (!cancelled && savedPath) {
-          setAvatarStoragePath(savedPath);
-        }
-      } catch (error) {
-        console.error('Erro ao restaurar avatar salvo localmente:', error);
-      }
-    }
-
-    hydrateAvatarPath();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.id, user?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolveAvatar() {
-      const sourcePath = profile?.fotoPath ?? (profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath);
-
-      if (!sourcePath) {
-        setAvatarUrl((current) => current ?? null);
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase.storage.from('avatares').createSignedUrl(sourcePath, 60 * 60);
-
-        if (!cancelled && !error && data?.signedUrl) {
-          setAvatarUrl(`${data.signedUrl}${data.signedUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
-          return;
-        }
-      } catch (error) {
-        console.error('Erro ao resolver avatar assinado:', error);
-      }
-
-      if (!cancelled) {
-        const fallbackUrl =
-          profile?.fotoUrl && profile.fotoUrl.startsWith('http')
-            ? profile.fotoUrl
-            : supabase.storage.from('avatares').getPublicUrl(sourcePath).data.publicUrl;
-        setAvatarUrl(`${fallbackUrl}${fallbackUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
-      }
-    }
-
-    resolveAvatar();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [avatarStoragePath, profile?.fotoPath, profile?.fotoUrl]);
-
-  useEffect(() => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      return;
-    }
-
-    const userId = currentUserId;
-
-    const sourcePath = profile?.fotoPath ?? (profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath);
-
-    if (!sourcePath) {
-      return;
-    }
-
-    setAvatarStoragePath(sourcePath);
-    AsyncStorage.setItem(getAvatarStorageKey(userId), sourcePath).catch((error) => {
-      console.error('Erro ao persistir avatar localmente:', error);
-    });
-  }, [avatarStoragePath, profile?.fotoPath, profile?.fotoUrl, profile?.id, user?.id]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await Promise.all([loadStats(), refreshProfile()]);
-    } catch (error) {
-      console.error('Erro ao atualizar perfil do instrutor:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [loadStats, refreshProfile]);
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      router.replace('/login');
-    } catch (error) {
-      console.error('Erro ao sair da conta:', error);
-    }
-  };
-
-  const openPhotoOptions = useCallback(() => {
-    setPhotoOptionsVisible(true);
-  }, []);
-
-  const closePhotoOptions = useCallback(() => {
-    if (isUploadingPhoto) {
-      return;
-    }
-
-    setPhotoOptionsVisible(false);
-  }, [isUploadingPhoto]);
-
-  const handleViewPhoto = useCallback(() => {
-    if (!avatarUrl) {
-      Alert.alert('Sem foto', 'Você ainda não adicionou uma foto de perfil.');
-      return;
-    }
-
-    setPhotoOptionsVisible(false);
-    setPhotoViewerVisible(true);
-  }, [avatarUrl]);
-
-  const handlePickPhoto = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      Alert.alert('Perfil indisponível', 'Não foi possível identificar o usuário logado.');
-      return;
-    }
-
-    setPhotoOptionsVisible(false);
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permissão necessária', 'Permita acesso à galeria para alterar a foto de perfil.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets[0]) {
-      return;
-    }
-
-    const asset = result.assets[0];
-
-    try {
-      setIsUploadingPhoto(true);
-
-      const base64File = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const fileBuffer = base64ToArrayBuffer(base64File);
-      const extension = asset.fileName?.split('.').pop()?.toLowerCase() || 'jpg';
-      const filePath = `${currentUserId}/avatar-${Date.now()}.${extension}`;
-      setAvatarStoragePath(filePath);
-      await AsyncStorage.setItem(getAvatarStorageKey(currentUserId), filePath);
-
-      const { error: uploadError } = await supabase.storage.from('avatares').upload(filePath, fileBuffer, {
-        upsert: true,
-        contentType: asset.mimeType ?? 'image/jpeg',
-      });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const { data } = supabase.storage.from('avatares').getPublicUrl(filePath);
-
-      const { data: persistedProfile, error: updateError } = await supabase
-        .from('usuarios')
-        .update({
-          foto_url: data.publicUrl,
-          foto_path: filePath,
-          atualizado_em: new Date().toISOString(),
-        })
-        .eq('id', currentUserId)
-        .select('foto_url, foto_path')
-        .single();
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      if (!persistedProfile?.foto_path) {
-        throw new Error('A foto foi enviada, mas o campo foto_path não foi persistido no banco.');
-      }
-
-      const { data: signedData } = await supabase.storage.from('avatares').createSignedUrl(filePath, 60 * 60);
-      setAvatarUrl(
-        signedData?.signedUrl
-          ? `${signedData.signedUrl}${signedData.signedUrl.includes('?') ? '&' : '?'}t=${Date.now()}`
-          : `${data.publicUrl}?t=${Date.now()}`
-      );
-
-      await refreshProfile();
-      Alert.alert('Foto atualizada', 'A foto de perfil foi salva com sucesso.');
-    } catch (error) {
-      console.error('Erro ao enviar foto do instrutor:', error);
-      Alert.alert('Erro ao enviar', getErrorMessage(error));
-      setAvatarStoragePath(profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : null);
-    } finally {
-      setIsUploadingPhoto(false);
-    }
-  }, [profile?.fotoUrl, profile?.id, refreshProfile, user?.id]);
-
-  const openEditModal = useCallback(() => {
-    setEditName(profile?.nomeCompleto ?? '');
-    setEditPhone(profile?.telefone ?? '');
-    setEditVisible(true);
-  }, [profile?.nomeCompleto, profile?.telefone]);
-
-  const closeEditModal = useCallback(() => {
-    if (isSaving) {
-      return;
-    }
-
-    setEditVisible(false);
-  }, [isSaving]);
-
-  const handleSaveProfile = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-    const trimmedName = editName.trim();
-    const trimmedPhone = editPhone.trim();
-
-    if (!currentUserId) {
-      Alert.alert('Perfil indisponível', 'Não foi possível identificar o usuário logado.');
-      return;
-    }
-
-    if (!trimmedName) {
-      Alert.alert('Nome obrigatório', 'Informe o nome do instrutor para salvar o perfil.');
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-
-      const { error } = await supabase
-        .from('usuarios')
-        .update({
-          nome_completo: trimmedName,
-          telefone: trimmedPhone || null,
-        })
-        .eq('id', currentUserId);
-
-      if (error) {
-        throw error;
-      }
-
-      await refreshProfile();
-      setEditVisible(false);
-      Alert.alert('Perfil atualizado', 'As informações do instrutor foram salvas com sucesso.');
-    } catch (error) {
-      console.error('Erro ao salvar perfil do instrutor:', error);
-      Alert.alert('Erro ao salvar', getErrorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
-  }, [editName, editPhone, profile?.id, refreshProfile, user?.id]);
-
-  const displayName = useMemo(
-    () =>
-      profile?.nomeCompleto ??
-      user?.user_metadata?.nome_completo ??
-      user?.user_metadata?.name ??
-      user?.email ??
-      'Usuário',
-    [profile?.nomeCompleto, user?.email, user?.user_metadata]
-  );
-
-  const regionLabel = useMemo(() => {
-    if (!profile?.regionalNome) {
-      return 'Regional não vinculada';
-    }
-
-    return `${profile.regionalNome}${profile.regionalUf ? ` - ${profile.regionalUf}` : ''}`;
-  }, [profile?.regionalNome, profile?.regionalUf]);
-
-  const summaryCards = useMemo(
-    () => [
-      {
-        id: '1',
-        label: 'Visitas no mês',
-        value: isLoading ? '...' : String(stats.visitasMes),
-        icon: 'clipboard-outline' as const,
-        color: THEME.yellow,
-      },
-      {
-        id: '2',
-        label: 'Atribuídas',
-        value: isLoading ? '...' : String(stats.atribuidas),
-        icon: 'business-outline' as const,
-        color: colors.info,
-      },
-      {
-        id: '3',
-        label: 'Concluídas',
-        value: isLoading ? '...' : String(stats.concluidas),
-        icon: 'checkmark-done-outline' as const,
-        color: THEME.primary,
-      },
-    ],
-    [isLoading, stats]
-  );
-
-  const preferencesCopy = useMemo(
-    () => [
-      {
-        ...PREFERENCIAS[0],
-        subtitle: regionLabel,
-      },
-      {
-        ...PREFERENCIAS[1],
-        subtitle: 'Alertas de visitas e resultado das análises',
-      },
-      {
-        ...PREFERENCIAS[2],
-        subtitle: 'Sincronização local habilitada para este dispositivo',
-      },
-      {
-        ...PREFERENCIAS[3],
-        subtitle: profile?.ativo ? 'Conta ativa e autenticada no sistema' : 'Conta com acesso pendente',
-      },
-    ],
-    [profile?.ativo, regionLabel]
-  );
+  const {
+    avatarUrl,
+    closeEditModal,
+    closePhotoOptions,
+    displayName,
+    editName,
+    editPhone,
+    editVisible,
+    handleLogout,
+    handlePickPhoto,
+    handleRefresh,
+    handleSaveProfile,
+    handleViewPhoto,
+    isLoading,
+    isSaving,
+    isUploadingPhoto,
+    openEditModal,
+    openPhotoOptions,
+    photoOptionsVisible,
+    photoViewerVisible,
+    preferencesCopy,
+    profile,
+    refreshing,
+    regionLabel,
+    setEditName,
+    setEditPhone,
+    setPhotoViewerVisible,
+    summaryCards,
+    user,
+  } = useInstructorProfile(THEME.primary, THEME.yellow);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -774,8 +289,10 @@ export default function PerfilScreen() {
           ))}
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PREFERENCIAS E OPERACAO</Text>
+        <SectionCard
+          containerStyle={styles.section}
+          title="PREFERENCIAS E OPERACAO"
+          titleStyle={styles.sectionTitle}>
           {preferencesCopy.map((item) => (
             <TouchableOpacity key={item.id} activeOpacity={0.9} style={styles.preferenceRow}>
               <View style={styles.preferenceIcon}>
@@ -788,7 +305,7 @@ export default function PerfilScreen() {
               <Ionicons name="chevron-forward" size={18} color="#96A099" />
             </TouchableOpacity>
           ))}
-        </View>
+        </SectionCard>
 
         <TouchableOpacity activeOpacity={0.92} style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={colors.danger} />

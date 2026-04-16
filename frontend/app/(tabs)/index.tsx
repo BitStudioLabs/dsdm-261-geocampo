@@ -1,9 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React from 'react';
 import { Image } from 'expo-image';
-import { useFocusEffect } from 'expo-router';
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   SafeAreaView,
@@ -15,9 +12,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/src/lib/supabase';
-import { colors } from '@/src/theme/colors';
+import { EmptyStateCard } from '@/features/instrutor/components/EmptyStateCard';
+import { FeedbackCard } from '@/features/instrutor/components/FeedbackCard';
+import { HeroHeaderCard } from '@/features/instrutor/components/HeroHeaderCard';
+import { LoadingState } from '@/features/instrutor/components/LoadingState';
+import { useInstructorDashboard } from '@/features/instrutor/hooks/useInstructorDashboard';
+import type { DashboardFilter, DashboardItem, StatusType } from '@/features/instrutor/types/dashboard';
 
 const THEME = {
   page: '#06180a',
@@ -31,209 +31,8 @@ const THEME = {
   yellow: '#f2c94c',
   blue: '#67b8ff',
   success: '#38d39f',
-  danger: '#ff7d7d',
   textSoft: 'rgba(240, 247, 241, 0.72)',
 };
-
-type StatusType =
-  | 'Agendada'
-  | 'Hoje'
-  | 'Em andamento'
-  | 'Concluída';
-type DashboardFilter = 'atribuidas' | 'hoje' | 'concluidas';
-
-type VisitStatusDb =
-  | 'pendente'
-  | 'em_andamento'
-  | 'finalizada'
-  | 'em_analise'
-  | 'aprovada'
-  | 'rejeitada'
-  | 'excluida'
-  | null;
-
-type DashboardItem = {
-  id: string;
-  nome: string;
-  local: string;
-  distancia: string;
-  status: StatusType;
-  visitaEm: string;
-  icone: keyof typeof Ionicons.glyphMap;
-  iconeBg: string;
-};
-
-type DashboardStats = Record<DashboardFilter, string>;
-
-type AtribuicaoDashboardRow = {
-  id: number;
-  id_propriedade: number;
-  ativa: boolean;
-  atualizado_em?: string | null;
-  criado_em?: string | null;
-};
-
-type VisitaDashboardRow = {
-  id: number;
-  id_propriedade: number | null;
-  criado_em?: string | null;
-  status_visita?: VisitStatusDb;
-};
-
-type PropertyLookup = Record<
-  number,
-  {
-    id: number;
-    nome: string | null;
-    municipio_nome: string | null;
-    uf: string | null;
-  }
->;
-
-function formatVisitDate(dateValue?: string | null) {
-  if (!dateValue) return 'Sem data definida';
-  const parsed = new Date(dateValue);
-  if (Number.isNaN(parsed.getTime())) return 'Sem data definida';
-
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-
-  const isSameDay =
-    parsed.getDate() === today.getDate() &&
-    parsed.getMonth() === today.getMonth() &&
-    parsed.getFullYear() === today.getFullYear();
-
-  const isTomorrow =
-    parsed.getDate() === tomorrow.getDate() &&
-    parsed.getMonth() === tomorrow.getMonth() &&
-    parsed.getFullYear() === tomorrow.getFullYear();
-
-  const time = parsed.toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  if (isSameDay) return `Hoje às ${time}`;
-  if (isTomorrow) return `Amanhã às ${time}`;
-
-  return parsed.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
-
-function mapVisitStatusToLabel(status?: VisitStatusDb, dateValue?: string | null, isCompleted?: boolean): StatusType {
-  if (
-    status === 'pendente' ||
-    status === 'em_andamento' ||
-    status === 'finalizada' ||
-    status === 'em_analise' ||
-    status === 'aprovada' ||
-    status === 'rejeitada' ||
-    isCompleted
-  ) {
-    return 'Concluída';
-  }
-  if (!dateValue) return 'Agendada';
-
-  const parsed = new Date(dateValue);
-  if (Number.isNaN(parsed.getTime())) return 'Agendada';
-
-  const now = new Date();
-  const sameDay =
-    parsed.getDate() === now.getDate() &&
-    parsed.getMonth() === now.getMonth() &&
-    parsed.getFullYear() === now.getFullYear();
-
-  if (sameDay) {
-    return parsed.getTime() <= now.getTime() ? 'Em andamento' : 'Hoje';
-  }
-
-  return 'Agendada';
-}
-
-function toTimestamp(value?: string | null) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  const time = parsed.getTime();
-  return Number.isNaN(time) ? null : time;
-}
-
-function hasPendingAssignment(item: AtribuicaoDashboardRow, latestVisit?: VisitaDashboardRow | null) {
-  if (!latestVisit) return true;
-
-  const assignmentTimestamp = toTimestamp(item.atualizado_em ?? item.criado_em ?? null);
-  const visitTimestamp = toTimestamp(latestVisit.criado_em ?? null);
-
-  if (assignmentTimestamp == null || visitTimestamp == null) {
-    return true;
-  }
-
-  return visitTimestamp < assignmentTimestamp;
-}
-
-function extractAvatarPath(value: string) {
-  const publicMarker = '/storage/v1/object/public/avatares/';
-  const signMarker = '/storage/v1/object/sign/avatares/';
-  if (value.includes(publicMarker)) return decodeURIComponent(value.split(publicMarker)[1]?.split('?')[0] ?? '');
-  if (value.includes(signMarker)) return decodeURIComponent(value.split(signMarker)[1]?.split('?')[0] ?? '');
-  return value;
-}
-
-function getAvatarStorageKey(userId: string) {
-  return `profile-avatar-path:${userId}`;
-}
-
-function getIconByIndex(index: number) {
-  const options = [
-    { icone: 'leaf-outline', iconeBg: '#DDF5E3' },
-    { icone: 'paw-outline', iconeBg: '#EEF4DD' },
-    { icone: 'nutrition-outline', iconeBg: '#F4EFD8' },
-    { icone: 'flower-outline', iconeBg: '#E4F2E6' },
-    { icone: 'home-outline', iconeBg: '#E9F0D7' },
-    { icone: 'rose-outline', iconeBg: '#F0E7D7' },
-  ] as const;
-  return options[index % options.length];
-}
-
-function buildAssignmentItem(
-  item: AtribuicaoDashboardRow,
-  propertyLookup: PropertyLookup,
-  index: number,
-  latestVisit?: VisitaDashboardRow | null
-): DashboardItem {
-  const iconData = getIconByIndex(index);
-  const visitDate = latestVisit?.criado_em ?? item.atualizado_em ?? item.criado_em ?? null;
-  const property = propertyLookup[item.id_propriedade] ?? null;
-
-  return {
-    id: `atr-${item.id}`,
-    nome: property?.nome ?? 'Propriedade sem nome',
-    local: [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') || 'Localização não informada',
-    distancia: latestVisit ? 'Nova visita pendente' : 'A conferir',
-    status: mapVisitStatusToLabel(latestVisit?.status_visita, visitDate, false),
-    visitaEm: formatVisitDate(visitDate),
-    ...iconData,
-  };
-}
-
-function buildVisitItem(item: VisitaDashboardRow, propertyLookup: PropertyLookup, index: number): DashboardItem {
-  const iconData = getIconByIndex(index);
-  const doneDate = item.criado_em ?? null;
-  const property = item.id_propriedade ? propertyLookup[item.id_propriedade] ?? null : null;
-
-  return {
-    id: `vis-${item.id}`,
-    nome: property?.nome ?? 'Propriedade sem nome',
-    local: [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') || 'Localização não informada',
-    distancia: 'Visita realizada',
-    status: mapVisitStatusToLabel(item.status_visita, doneDate, true),
-    visitaEm: formatVisitDate(doneDate),
-    ...iconData,
-  };
-}
 
 function getStatusStyle(status: StatusType) {
   switch (status) {
@@ -248,273 +47,22 @@ function getStatusStyle(status: StatusType) {
   }
 }
 
-function getSectionCopy(activeFilter: DashboardFilter) {
-  if (activeFilter === 'concluidas') {
-    return {
-      eyebrow: 'Histórico concluído',
-      title: 'Visitas já realizadas por você',
-      description: 'Use essa lista para revisar os registros finalizados e validar o histórico recente.',
-    };
-  }
-
-  if (activeFilter === 'hoje') {
-    return {
-      eyebrow: 'Agenda do dia',
-      title: 'Prioridades programadas para hoje',
-      description: 'Aqui ficam apenas as propriedades que exigem ação imediata no seu turno.',
-    };
-  }
-
-  return {
-    eyebrow: 'Carteira ativa',
-    title: 'Propriedades atribuídas ao seu usuário',
-    description: 'Acompanhe tudo que ainda precisa ser visitado e organize sua próxima ida a campo.',
-  };
-}
-
 export default function DashboardScreen() {
-  const { profile, user } = useAuth();
-  const [activeFilter, setActiveFilter] = useState<DashboardFilter>('atribuidas');
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [avatarStoragePath, setAvatarStoragePath] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [assignedItems, setAssignedItems] = useState<DashboardItem[]>([]);
-  const [completedItems, setCompletedItems] = useState<DashboardItem[]>([]);
-  const [stats, setStats] = useState<DashboardStats>({ atribuidas: '0', hoje: '0', concluidas: '0' });
-  const hasFocusedOnceRef = useRef(false);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadDashboard() {
-      const currentUserId = profile?.id ?? user?.id;
-
-      if (!currentUserId) {
-        if (mounted) {
-          setAssignedItems([]);
-          setCompletedItems([]);
-          setStats({ atribuidas: '0', hoje: '0', concluidas: '0' });
-          setIsLoading(false);
-          setRefreshing(false);
-        }
-        return;
-      }
-
-      try {
-        setErrorMessage('');
-
-        const [atribuicoesRes, visitasRes] = await Promise.all([
-          supabase
-            .from('atribuicoes')
-            .select('id, id_propriedade, ativa, atualizado_em, criado_em')
-            .eq('id_instrutor', currentUserId)
-            .eq('ativa', true)
-            .order('atualizado_em', { ascending: false }),
-          supabase
-            .from('visitas')
-            .select('id, id_propriedade, criado_em, status_visita')
-            .eq('id_instrutor', currentUserId)
-            .order('criado_em', { ascending: false })
-            .limit(50),
-        ]);
-
-        if (atribuicoesRes.error) throw atribuicoesRes.error;
-        if (visitasRes.error) throw visitasRes.error;
-
-        const atribuicoes = (atribuicoesRes.data ?? []) as AtribuicaoDashboardRow[];
-        const visitas = (visitasRes.data ?? []) as VisitaDashboardRow[];
-
-        const latestVisitByProperty = visitas.reduce<Record<number, VisitaDashboardRow>>((acc, visit) => {
-          if (visit.id_propriedade == null) return acc;
-          if (!acc[visit.id_propriedade]) acc[visit.id_propriedade] = visit;
-          return acc;
-        }, {});
-
-        const propertyIds = Array.from(
-          new Set(
-            [...atribuicoes.map((item) => item.id_propriedade), ...visitas.map((item) => item.id_propriedade)].filter(
-              (value): value is number => typeof value === 'number'
-            )
-          )
-        );
-
-        let propertyLookup: PropertyLookup = {};
-
-        if (propertyIds.length > 0) {
-          const { data: propertiesData, error: propertiesError } = await supabase
-            .from('propriedades')
-            .select('id, nome, municipio_nome, uf')
-            .in('id', propertyIds);
-
-          if (propertiesError) throw propertiesError;
-
-          propertyLookup = (propertiesData ?? []).reduce<PropertyLookup>((acc, property) => {
-            acc[property.id] = property;
-            return acc;
-          }, {});
-        }
-
-        const atribuidas = atribuicoes
-          .filter((item) => hasPendingAssignment(item, latestVisitByProperty[item.id_propriedade] ?? null))
-          .map((item, index) => buildAssignmentItem(item, propertyLookup, index, null));
-
-        const concluidas = Object.values(latestVisitByProperty).map((item, index) =>
-          buildVisitItem(item, propertyLookup, index)
-        );
-
-        const hojeCount = atribuidas.filter((item) => item.status === 'Hoje' || item.status === 'Em andamento').length;
-
-        if (mounted) {
-          setAssignedItems(atribuidas);
-          setCompletedItems(concluidas);
-          setStats({
-            atribuidas: String(atribuidas.length),
-            hoje: String(hojeCount),
-            concluidas: String(concluidas.length),
-          });
-        }
-      } catch (error) {
-        console.error('Erro ao carregar painel do instrutor:', error);
-        if (mounted) {
-          setErrorMessage('Não foi possível carregar suas visitas agora.');
-          setAssignedItems([]);
-          setCompletedItems([]);
-          setStats({ atribuidas: '0', hoje: '0', concluidas: '0' });
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-          setRefreshing(false);
-        }
-      }
-    }
-
-    setIsLoading(true);
-    loadDashboard();
-
-    return () => {
-      mounted = false;
-    };
-  }, [profile?.id, user?.id, refreshing]);
-
-  useEffect(() => {
-    const currentUserId = profile?.id ?? user?.id;
-    if (!currentUserId) return;
-
-    const userId = currentUserId;
-    let cancelled = false;
-
-    async function hydrateAvatarPath() {
-      try {
-        const savedPath = await AsyncStorage.getItem(getAvatarStorageKey(userId));
-        if (!cancelled && savedPath) setAvatarStoragePath(savedPath);
-      } catch (error) {
-        console.error('Erro ao restaurar avatar do dashboard:', error);
-      }
-    }
-
-    hydrateAvatarPath();
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.id, user?.id]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!hasFocusedOnceRef.current) {
-        hasFocusedOnceRef.current = true;
-        return;
-      }
-
-      setRefreshing((current) => !current);
-    }, [])
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolveAvatar() {
-      const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
-      if (!sourcePath) return;
-
-      try {
-        const { data, error } = await supabase.storage.from('avatares').createSignedUrl(sourcePath, 3600);
-
-        if (!cancelled && !error && data?.signedUrl) {
-          setAvatarUrl(`${data.signedUrl}${data.signedUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
-          return;
-        }
-      } catch (error) {
-        console.error('Erro ao resolver avatar do dashboard:', error);
-      }
-
-      if (!cancelled) {
-        const fallbackUrl =
-          profile?.fotoUrl && profile.fotoUrl.startsWith('http')
-            ? profile.fotoUrl
-            : supabase.storage.from('avatares').getPublicUrl(sourcePath).data.publicUrl;
-        setAvatarUrl(`${fallbackUrl}${fallbackUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
-      }
-    }
-
-    resolveAvatar();
-    return () => {
-      cancelled = true;
-    };
-  }, [avatarStoragePath, profile?.fotoUrl]);
-
-  useEffect(() => {
-    const currentUserId = profile?.id ?? user?.id;
-    const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
-    if (!currentUserId || !sourcePath) return;
-
-    const userId = currentUserId;
-    setAvatarStoragePath(sourcePath);
-    AsyncStorage.setItem(getAvatarStorageKey(userId), sourcePath).catch((error) => {
-      console.error('Erro ao persistir avatar do dashboard:', error);
-    });
-  }, [avatarStoragePath, profile?.fotoUrl, profile?.id, user?.id]);
-
-  const displayName = useMemo(() => {
-    const fullName = profile?.nomeCompleto ?? user?.user_metadata?.nome_completo ?? 'Instrutor';
-    return fullName.trim();
-  }, [profile?.nomeCompleto, user?.user_metadata]);
-
-  const shortName = useMemo(() => displayName.split(' ').filter(Boolean)[0] ?? 'Instrutor', [displayName]);
-
-  const filteredProperties = useMemo(() => {
-    if (activeFilter === 'concluidas') return completedItems;
-    if (activeFilter === 'hoje') {
-      return assignedItems.filter((item) => item.status === 'Hoje' || item.status === 'Em andamento');
-    }
-    return assignedItems;
-  }, [activeFilter, assignedItems, completedItems]);
-
-  const sectionCopy = useMemo(() => getSectionCopy(activeFilter), [activeFilter]);
-
-  const activeSummaryText = useMemo(() => {
-    if (activeFilter === 'concluidas') {
-      return `${stats.concluidas} visita${stats.concluidas === '1' ? '' : 's'} concluída${stats.concluidas === '1' ? '' : 's'}`;
-    }
-    if (activeFilter === 'hoje') {
-      return `${stats.hoje} prioridade${stats.hoje === '1' ? '' : 's'} para hoje`;
-    }
-    return `${stats.atribuidas} propriedade${stats.atribuidas === '1' ? '' : 's'} aguardando visita`;
-  }, [activeFilter, stats.atribuidas, stats.concluidas, stats.hoje]);
-
-  const statCards = useMemo(
-    () =>
-      [
-        { id: 'atribuidas', label: 'Atribuídas', helper: 'Carteira ativa', value: stats.atribuidas, icon: 'layers-outline' as const },
-        { id: 'hoje', label: 'Hoje', value: stats.hoje, icon: 'sunny-outline' as const },
-        { id: 'concluidas', label: 'Concluídas', helper: 'Histórico recente', value: stats.concluidas, icon: 'checkmark-done-outline' as const },
-      ] as const,
-    [stats]
-  );
-
-  const handleRefresh = () => setRefreshing(true);
+  const {
+    activeFilter,
+    activeSummaryText,
+    avatarUrl,
+    errorMessage,
+    filteredProperties,
+    handleRefresh,
+    isLoading,
+    refreshing,
+    sectionCopy,
+    setActiveFilter,
+    shortName,
+    statCards,
+    stats,
+  } = useInstructorDashboard();
 
   const renderItem = ({ item, index }: { item: DashboardItem; index: number }) => {
     const statusStyle = getStatusStyle(item.status);
@@ -589,20 +137,23 @@ export default function DashboardScreen() {
                 </View>
               </View>
 
-              <View style={styles.heroCard}>
-                <View style={styles.heroCardCopy}>
-                  <Text style={styles.heroEyebrow}>Seu ritmo de campo</Text>
-                  <Text style={styles.heroTitle}>{sectionCopy.title}</Text>
-                  <Text style={styles.heroDescription}>{sectionCopy.description}</Text>
-                </View>
-
-                <View style={styles.heroMetric}>
-                  <Text style={styles.heroMetricLabel}>Em foco</Text>
-                  <Text style={styles.heroMetricValue}>
-                    {isLoading ? '...' : activeFilter === 'concluidas' ? stats.concluidas : activeFilter === 'hoje' ? stats.hoje : stats.atribuidas}
-                  </Text>
-                </View>
-              </View>
+              <HeroHeaderCard
+                eyebrow="Seu ritmo de campo"
+                title={sectionCopy.title}
+                description={sectionCopy.description}
+                metricLabel="Em foco"
+                metricValue={
+                  isLoading ? '...' : activeFilter === 'concluidas' ? stats.concluidas : activeFilter === 'hoje' ? stats.hoje : stats.atribuidas
+                }
+                containerStyle={styles.heroCard}
+                copyStyle={styles.heroCardCopy}
+                eyebrowStyle={styles.heroEyebrow}
+                titleStyle={styles.heroTitle}
+                descriptionStyle={styles.heroDescription}
+                metricStyle={styles.heroMetric}
+                metricLabelStyle={styles.heroMetricLabel}
+                metricValueStyle={styles.heroMetricValue}
+              />
             </View>
 
             <View style={styles.segmentWrap}>
@@ -648,31 +199,37 @@ export default function DashboardScreen() {
             </View>
 
             {errorMessage ? (
-              <View style={styles.feedbackCard}>
-                <Ionicons name="alert-circle-outline" size={18} color={THEME.yellow} />
-                <Text style={styles.feedbackText}>{errorMessage}</Text>
-              </View>
+              <FeedbackCard
+                text={errorMessage}
+                iconColor={THEME.yellow}
+                containerStyle={styles.feedbackCard}
+                textStyle={styles.feedbackText}
+              />
             ) : null}
 
             {isLoading ? (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator color={THEME.primary} size="large" />
-                <Text style={styles.loadingText}>Carregando sua rotina de campo...</Text>
-              </View>
+              <LoadingState
+                color={THEME.primary}
+                size="large"
+                text="Carregando sua rotina de campo..."
+                containerStyle={styles.loadingWrap}
+                textStyle={styles.loadingText}
+              />
             ) : null}
           </View>
         }
         ListEmptyComponent={
           !isLoading ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconWrap}>
-                <Ionicons name="trail-sign-outline" size={28} color={THEME.primary} />
-              </View>
-              <Text style={styles.emptyTitle}>Nada para mostrar nesta visão</Text>
-              <Text style={styles.emptyDescription}>
-                Quando houver registros nessa categoria, eles vão aparecer aqui para você acompanhar.
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon="trail-sign-outline"
+              iconColor={THEME.primary}
+              title="Nada para mostrar nesta visão"
+              description="Quando houver registros nessa categoria, eles vão aparecer aqui para você acompanhar."
+              containerStyle={styles.emptyState}
+              iconWrapStyle={styles.emptyIconWrap}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyDescription}
+            />
           ) : null
         }
       />
