@@ -1,11 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
 import {
-  ActivityIndicator,
-  Alert,
   Dimensions,
   RefreshControl,
   SafeAreaView,
@@ -17,7 +12,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -29,8 +23,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/src/lib/supabase';
+import { EmptyStateCard } from '@/features/instrutor/components/EmptyStateCard';
+import { FeedbackCard } from '@/features/instrutor/components/FeedbackCard';
+import { LoadingState } from '@/features/instrutor/components/LoadingState';
+import { SectionCard } from '@/features/instrutor/components/SectionCard';
+import { StatCard } from '@/features/instrutor/components/StatCard';
+import { useInstructorVisits } from '@/features/instrutor/hooks/useInstructorVisits';
+import type { VisitHistoryItem } from '@/features/instrutor/types/visitas';
+import { calculateDistanceInMeters } from '@/features/instrutor/utils/visitFormatting';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -51,81 +51,6 @@ const THEME = {
   textSoft: 'rgba(240,247,241,0.72)',
   link: '#7de88a',
 };
-
-type PropertyOption = {
-  id: number;
-  nome: string;
-  meta: string;
-  latitude: number | null;
-  longitude: number | null;
-};
-
-type VisitHistoryItem = {
-  id: string;
-  propriedade: string;
-  data: string;
-  hora: string;
-  status: 'Concluída' | 'Enviada';
-};
-
-type VisitStatusDb =
-  | 'pendente'
-  | 'em_andamento'
-  | 'finalizada'
-  | 'em_analise'
-  | 'aprovada'
-  | 'rejeitada'
-  | 'excluida'
-  | null;
-
-type AtribuicaoRow = {
-  id: number;
-  id_propriedade: number;
-  atualizado_em?: string | null;
-  criado_em?: string | null;
-};
-
-type VisitaRow = {
-  id: number;
-  id_propriedade: number | null;
-  criado_em?: string | null;
-  status_visita?: VisitStatusDb;
-};
-
-type PropertyLookup = Record<
-  number,
-  {
-    id: number;
-    nome: string | null;
-    municipio_nome: string | null;
-    uf: string | null;
-    latitude: number | null;
-    longitude: number | null;
-  }
->;
-
-type SelectedPhoto = {
-  uri: string;
-  fileName: string;
-  extension: string;
-  mimeType: string;
-  fileSizeLabel: string;
-  dimensions: string;
-  cameraModel: string;
-  latitude: string;
-  longitude: string;
-  altitude: string;
-  capturedAt: string;
-  latitudeValue: number | null;
-  longitudeValue: number | null;
-  altitudeValue: number | null;
-  capturedAtIso: string | null;
-  hasExif: boolean;
-  hasGps: boolean;
-  exifFieldCount: number;
-};
-
-const VISIT_EVIDENCE_BUCKET = 'evidencias-visitas';
 
 const STARS = Array.from({ length: 20 }, (_, i) => ({
   id: i,
@@ -226,328 +151,6 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
   return <Animated.View style={[glowStyle, { pointerEvents: 'none' }]} />;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return '--/--/----';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '--/--/----';
-  }
-
-  return parsed.toLocaleDateString('pt-BR');
-}
-
-function formatTime(value?: string | null) {
-  if (!value) {
-    return '--:--';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '--:--';
-  }
-
-  return parsed.toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatFileSize(bytes?: number | null) {
-  if (!bytes || bytes <= 0) {
-    return 'Tamanho não informado';
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function getExifValue(exif: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    if (key in exif && exif[key] != null) {
-      return exif[key];
-    }
-  }
-
-  return null;
-}
-
-function toNumericExifPart(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-
-    if (!normalized) {
-      return null;
-    }
-
-    if (normalized.includes('/')) {
-      const [rawA, rawB] = normalized.split('/');
-      const a = Number(rawA);
-      const b = Number(rawB);
-
-      if (Number.isFinite(a) && Number.isFinite(b) && b !== 0) {
-        return a / b;
-      }
-    }
-
-    const parsed = Number(normalized.replace(',', '.'));
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  if (typeof value === 'object' && value !== null) {
-    const maybeNumerator = (value as { numerator?: unknown; denominator?: unknown }).numerator;
-    const maybeDenominator = (value as { numerator?: unknown; denominator?: unknown }).denominator;
-
-    if (maybeNumerator != null && maybeDenominator != null) {
-      const numerator = toNumericExifPart(maybeNumerator);
-      const denominator = toNumericExifPart(maybeDenominator);
-
-      if (numerator != null && denominator != null && denominator !== 0) {
-        return numerator / denominator;
-      }
-    }
-  }
-
-  return null;
-}
-
-function toDecimalCoordinate(value: unknown, ref?: string) {
-  if (typeof value === 'number') {
-    if (value === 0 && !ref) {
-      return null;
-    }
-
-    if (ref === 'S' || ref === 'W') {
-      return value * -1;
-    }
-
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-
-    if (!normalized) {
-      return null;
-    }
-
-    const direct = Number(normalized.replace(',', '.'));
-    if (Number.isFinite(direct) && direct !== 0) {
-      return ref === 'S' || ref === 'W' ? direct * -1 : direct;
-    }
-
-    const parts = normalized
-      .split(/[,\s]+/)
-      .map((part) => toNumericExifPart(part))
-      .filter((part): part is number => part != null);
-
-    if (parts.length >= 3) {
-      const signal = ref === 'S' || ref === 'W' ? -1 : 1;
-      return signal * (parts[0] + parts[1] / 60 + parts[2] / 3600);
-    }
-
-    return null;
-  }
-
-  if (!Array.isArray(value) || value.length < 3) {
-    return null;
-  }
-
-  const parts = value
-    .map((part) => toNumericExifPart(part))
-    .filter((part): part is number => part != null);
-
-  if (parts.length < 3) {
-    return null;
-  }
-
-  const signal = ref === 'S' || ref === 'W' ? -1 : 1;
-  return signal * (parts[0] + parts[1] / 60 + parts[2] / 3600);
-}
-
-function formatCoordinate(value: number | null, suffix = '') {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return 'Não disponível';
-  }
-
-  return `${value.toFixed(5)}${suffix}`;
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) {
-      return message;
-    }
-  }
-
-  return 'Erro desconhecido.';
-}
-
-function base64ToArrayBuffer(base64: string) {
-  const binaryString = globalThis.atob(base64);
-  const length = binaryString.length;
-  const bytes = new Uint8Array(length);
-
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  return bytes.buffer;
-}
-
-function parseExifDate(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
-  const parsed = new Date(normalized);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return parsed.toISOString();
-}
-
-function extractCoordinate(exif: Record<string, unknown>, kind: 'latitude' | 'longitude') {
-  const isLatitude = kind === 'latitude';
-  const directKeys = isLatitude
-    ? ['latitude', 'Latitude', 'GPSLatitudeDecimal', 'gpsLatitudeDecimal']
-    : ['longitude', 'Longitude', 'GPSLongitudeDecimal', 'gpsLongitudeDecimal'];
-  const dmsKeys = isLatitude
-    ? ['GPSLatitude', 'gpsLatitude', 'ExifGPSLatitude']
-    : ['GPSLongitude', 'gpsLongitude', 'ExifGPSLongitude'];
-  const refKeys = isLatitude
-    ? ['GPSLatitudeRef', 'gpsLatitudeRef', 'ExifGPSLatitudeRef']
-    : ['GPSLongitudeRef', 'gpsLongitudeRef', 'ExifGPSLongitudeRef'];
-
-  const refValue = getExifValue(exif, refKeys);
-  const ref = typeof refValue === 'string' ? refValue.toUpperCase() : undefined;
-  const directValue = getExifValue(exif, directKeys);
-  const directCoordinate = toDecimalCoordinate(directValue, ref);
-
-  if (directCoordinate != null) {
-    return directCoordinate;
-  }
-
-  const dmsValue = getExifValue(exif, dmsKeys);
-  return toDecimalCoordinate(dmsValue, ref);
-}
-
-function extractAltitude(exif: Record<string, unknown>) {
-  const altitudeValue = getExifValue(exif, ['altitude', 'Altitude', 'GPSAltitude', 'gpsAltitude']);
-  return toNumericExifPart(altitudeValue);
-}
-
-async function enrichAssetWithMediaLibrary(asset: ImagePicker.ImagePickerAsset) {
-  if (!asset.assetId) {
-    return asset;
-  }
-
-  try {
-    const permission = await MediaLibrary.requestPermissionsAsync();
-    if (!permission.granted) {
-      return asset;
-    }
-
-    const assetInfo = await MediaLibrary.getAssetInfoAsync(asset.assetId);
-    const mediaLibraryExif = (((assetInfo as unknown as { exif?: Record<string, unknown> | null }).exif) ?? {}) as Record<
-      string,
-      unknown
-    >;
-    const mediaLocation = ((assetInfo as unknown as { location?: { latitude?: number; longitude?: number; altitude?: number } | null }).location) ?? null;
-    const assetExif = ((asset.exif ?? {}) as Record<string, unknown>) ?? {};
-
-    const mergedExif: Record<string, unknown> = {
-      ...mediaLibraryExif,
-      ...assetExif,
-    };
-
-    if (mediaLocation?.latitude != null && mergedExif.latitude == null && mergedExif.GPSLatitude == null) {
-      mergedExif.latitude = mediaLocation.latitude;
-      mergedExif.GPSLatitudeDecimal = mediaLocation.latitude;
-    }
-
-    if (mediaLocation?.longitude != null && mergedExif.longitude == null && mergedExif.GPSLongitude == null) {
-      mergedExif.longitude = mediaLocation.longitude;
-      mergedExif.GPSLongitudeDecimal = mediaLocation.longitude;
-    }
-
-    if (mediaLocation?.altitude != null && mergedExif.altitude == null && mergedExif.GPSAltitude == null) {
-      mergedExif.altitude = mediaLocation.altitude;
-      mergedExif.GPSAltitude = mediaLocation.altitude;
-    }
-
-    return {
-      ...asset,
-      exif: mergedExif,
-    };
-  } catch (error) {
-    console.warn('Falha ao enriquecer EXIF via media library:', error);
-    return asset;
-  }
-}
-
-function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): SelectedPhoto {
-  const exif = (asset.exif ?? {}) as Record<string, unknown>;
-  const exifFieldCount = Object.keys(exif).length;
-  const latitude = extractCoordinate(exif, 'latitude');
-  const longitude = extractCoordinate(exif, 'longitude');
-  const altitudeValue = extractAltitude(exif);
-  const altitude = altitudeValue != null ? `${Math.round(altitudeValue)}m` : 'Não disponível';
-  const rawDate = (getExifValue(exif, ['DateTimeOriginal', 'DateTimeDigitized', 'CreateDate', 'dateTime']) as string | null) ?? null;
-  const extension = asset.fileName?.split('.').pop()?.toLowerCase() || asset.mimeType?.split('/').pop() || 'jpg';
-  const cameraModel = (getExifValue(exif, ['Model', 'model', 'make', 'Make']) as string | null) || 'Não identificado';
-
-  const capturedAt = rawDate
-    ? rawDate.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$3/$2/$1').replace(' ', ' - ')
-    : 'Não disponível';
-
-  return {
-    uri: asset.uri,
-    fileName: asset.fileName || 'foto-visita',
-    extension,
-    mimeType: asset.mimeType || 'image/jpeg',
-    fileSizeLabel: formatFileSize(asset.fileSize),
-    dimensions: `${asset.width} x ${asset.height}`,
-    cameraModel,
-    latitude: formatCoordinate(latitude),
-    longitude: formatCoordinate(longitude),
-    altitude,
-    capturedAt,
-    latitudeValue: latitude,
-    longitudeValue: longitude,
-    altitudeValue,
-    capturedAtIso: parseExifDate(rawDate),
-    hasExif: exifFieldCount > 0,
-    hasGps: latitude != null && longitude != null,
-    exifFieldCount,
-  };
-}
-
-function mapVisitStatusToHistoryLabel(status?: VisitStatusDb): VisitHistoryItem['status'] {
-  if (status === 'pendente' || status === 'em_andamento') {
-    return 'Enviada';
-  }
-
-  return 'Concluída';
-}
-
 function getHistoryStatusStyle(status: VisitHistoryItem['status']) {
   switch (status) {
     case 'Concluída':
@@ -557,231 +160,23 @@ function getHistoryStatusStyle(status: VisitHistoryItem['status']) {
   }
 }
 
-function toTimestamp(value?: string | null) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  const time = parsed.getTime();
-  return Number.isNaN(time) ? null : time;
-}
-
-function hasPendingAssignment(item: AtribuicaoRow, latestVisit?: VisitaRow | null) {
-  if (!latestVisit) return true;
-
-  const assignmentTimestamp = toTimestamp(item.atualizado_em ?? item.criado_em ?? null);
-  const visitTimestamp = toTimestamp(latestVisit.criado_em ?? null);
-
-  if (assignmentTimestamp == null || visitTimestamp == null) {
-    return true;
-  }
-
-  return visitTimestamp < assignmentTimestamp;
-}
-
-function calculateDistanceInMeters(
-  originLat: number,
-  originLon: number,
-  targetLat: number,
-  targetLon: number
-) {
-  const earthRadius = 6371000;
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const deltaLat = toRadians(targetLat - originLat);
-  const deltaLon = toRadians(targetLon - originLon);
-  const lat1 = toRadians(originLat);
-  const lat2 = toRadians(targetLat);
-
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return Math.round(earthRadius * c);
-}
-
 export default function VisitasScreen() {
-  const { profile, user } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmittingVisit, setIsSubmittingVisit] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [properties, setProperties] = useState<PropertyOption[]>([]);
-  const [history, setHistory] = useState<VisitHistoryItem[]>([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
-  const hasFocusedOnceRef = React.useRef(false);
-
-  const loadVisitasData = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      setProperties([]);
-      setHistory([]);
-      setSelectedPropertyId(null);
-      setIsLoading(false);
-      return;
-    }
-
-    setErrorMessage('');
-
-    const [atribuicoesRes, visitasRes] = await Promise.all([
-      supabase
-        .from('atribuicoes')
-        .select('id, id_propriedade, atualizado_em, criado_em')
-        .eq('id_instrutor', currentUserId)
-        .eq('ativa', true)
-        .order('atualizado_em', { ascending: false }),
-      supabase
-        .from('visitas')
-        .select('id, id_propriedade, criado_em, status_visita')
-        .eq('id_instrutor', currentUserId)
-        .order('criado_em', { ascending: false })
-        .limit(20),
-    ]);
-
-    if (atribuicoesRes.error) {
-      throw atribuicoesRes.error;
-    }
-
-    if (visitasRes.error) {
-      throw visitasRes.error;
-    }
-
-    const atribuicoes = (atribuicoesRes.data ?? []) as AtribuicaoRow[];
-    const visitas = (visitasRes.data ?? []) as VisitaRow[];
-    const latestVisitByProperty = visitas.reduce<Record<number, VisitaRow>>((acc, visit) => {
-      if (visit.id_propriedade == null) {
-        return acc;
-      }
-
-      if (!acc[visit.id_propriedade]) {
-        acc[visit.id_propriedade] = visit;
-      }
-
-      return acc;
-    }, {});
-    const propertyIds = Array.from(
-      new Set(
-        [...atribuicoes.map((item) => item.id_propriedade), ...visitas.map((item) => item.id_propriedade)].filter(
-          (value): value is number => typeof value === 'number'
-        )
-      )
-    );
-
-    let propertyLookup: PropertyLookup = {};
-
-    if (propertyIds.length > 0) {
-      const { data: propertiesData, error: propertiesError } = await supabase
-        .from('propriedades')
-        .select('id, nome, municipio_nome, uf, latitude, longitude')
-        .in('id', propertyIds)
-        .order('nome', { ascending: true });
-
-      if (propertiesError) {
-        throw propertiesError;
-      }
-
-      propertyLookup = (propertiesData ?? []).reduce<PropertyLookup>((acc, property) => {
-        acc[property.id] = property;
-        return acc;
-      }, {});
-    }
-
-    const nextProperties = atribuicoes
-      .filter((item) => hasPendingAssignment(item, latestVisitByProperty[item.id_propriedade] ?? null))
-      .map((item) => {
-        const property = propertyLookup[item.id_propriedade];
-
-        return {
-          id: item.id_propriedade,
-          nome: property?.nome ?? 'Propriedade sem nome',
-          meta:
-            [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') ||
-            'Localização não informada',
-          latitude: property?.latitude ?? null,
-          longitude: property?.longitude ?? null,
-        };
-      });
-
-    const nextHistory = Object.values(latestVisitByProperty).map((item, index) => {
-      const property = item.id_propriedade ? propertyLookup[item.id_propriedade] ?? null : null;
-
-      return {
-        id: String(item.id),
-        propriedade: property?.nome ?? `Visita ${index + 1}`,
-        data: formatDate(item.criado_em),
-        hora: formatTime(item.criado_em),
-        status: mapVisitStatusToHistoryLabel(item.status_visita),
-      } as VisitHistoryItem;
-    });
-
-    setProperties(nextProperties);
-    setHistory(nextHistory);
-    setSelectedPropertyId((current) =>
-      nextProperties.some((item) => item.id === current) ? current ?? null : nextProperties[0]?.id ?? null
-    );
-  }, [profile?.id, user?.id]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function run() {
-      setIsLoading(true);
-      try {
-        await loadVisitasData();
-      } catch (error) {
-        console.error('Erro ao carregar tela de visitas:', error);
-        if (mounted) {
-          setErrorMessage('Não foi possível carregar suas visitas agora.');
-          setProperties([]);
-          setHistory([]);
-          setSelectedPropertyId(null);
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    run();
-
-    return () => {
-      mounted = false;
-    };
-  }, [loadVisitasData]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!hasFocusedOnceRef.current) {
-        hasFocusedOnceRef.current = true;
-        return;
-      }
-
-      let active = true;
-
-      setRefreshing(true);
-      (async () => {
-        try {
-          await loadVisitasData();
-        } catch (error) {
-          console.error('Erro ao recarregar tela de visitas ao retomar foco:', error);
-        } finally {
-          if (active) {
-            setRefreshing(false);
-          }
-        }
-      })();
-
-      return () => {
-        active = false;
-      };
-    }, [loadVisitasData])
-  );
-
-  const selectedProperty = useMemo(
-    () => properties.find((item) => item.id === selectedPropertyId) ?? properties[0] ?? null,
-    [properties, selectedPropertyId]
-  );
+  const {
+    errorMessage,
+    handleClearSelectedPhoto,
+    handleCreateVisit,
+    handlePickImage,
+    handleRefresh,
+    history,
+    isLoading,
+    isSubmittingVisit,
+    properties,
+    refreshing,
+    selectedPhoto,
+    selectedProperty,
+    selectedPropertyId,
+    setSelectedPropertyId,
+  } = useInstructorVisits();
 
   const metadataItems = useMemo(
     () => [
@@ -888,136 +283,6 @@ export default function VisitasScreen() {
     return `Foto registrada a ${(distance / 1000).toFixed(2)} km da propriedade.`;
   }, [selectedPhoto, selectedProperty]);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await loadVisitasData();
-    } catch (error) {
-      console.error('Erro ao atualizar tela de visitas:', error);
-      setErrorMessage('Não foi possível atualizar suas visitas agora.');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const handlePickImage = useCallback(async () => {
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert('Permissão necessária', 'Autorize o acesso à galeria para selecionar a foto da visita.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 1,
-        exif: true,
-      });
-
-      if (result.canceled || !result.assets?.length) {
-        return;
-      }
-
-      const enrichedAsset = await enrichAssetWithMediaLibrary(result.assets[0]);
-      setSelectedPhoto(buildSelectedPhoto(enrichedAsset));
-    } catch (error) {
-      console.error('Erro ao selecionar foto da visita:', error);
-      Alert.alert('Erro ao selecionar foto', 'Não foi possível abrir sua galeria agora.');
-    }
-  }, []);
-
-  const handleClearSelectedPhoto = useCallback(() => {
-    setSelectedPhoto(null);
-  }, []);
-
-  const handleCreateVisit = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId || !selectedProperty) {
-      Alert.alert('Visita indisponível', 'Selecione uma propriedade antes de continuar.');
-      return;
-    }
-
-    if (!selectedPhoto) {
-      Alert.alert('Foto obrigatória', 'Selecione a foto da visita antes de enviar para análise.');
-      return;
-    }
-
-    try {
-      setIsSubmittingVisit(true);
-      setErrorMessage('');
-
-      const { data, error } = await supabase
-        .from('visitas')
-        .insert({
-          id_instrutor: currentUserId,
-          id_propriedade: selectedProperty.id,
-          criado_em: new Date().toISOString(),
-          status_visita: 'pendente',
-        })
-        .select('id')
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      const visitId = data?.id;
-
-      if (visitId) {
-        const base64File = await FileSystem.readAsStringAsync(selectedPhoto.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const fileBuffer = base64ToArrayBuffer(base64File);
-        const filePath = `${currentUserId}/${visitId}/evidencia-${Date.now()}.${selectedPhoto.extension}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from(VISIT_EVIDENCE_BUCKET)
-          .upload(filePath, fileBuffer, {
-            upsert: true,
-            contentType: selectedPhoto.mimeType,
-          });
-
-        if (uploadError) {
-          throw uploadError;
-        }
-
-        const publicUrl = supabase.storage.from(VISIT_EVIDENCE_BUCKET).getPublicUrl(filePath).data.publicUrl;
-        const { error: updateError } = await supabase
-          .from('visitas')
-          .update({
-            foto_url: publicUrl,
-            foto_path: filePath,
-            latitude: selectedPhoto.latitudeValue,
-            longitude: selectedPhoto.longitudeValue,
-            altitude: selectedPhoto.altitudeValue,
-            capturado_em: selectedPhoto.capturedAtIso,
-            status_visita: 'em_andamento',
-            atualizado_em: new Date().toISOString(),
-          })
-          .eq('id', visitId);
-
-        if (updateError) {
-          console.warn('Visita salva, mas não foi possível gravar a referência da foto:', updateError);
-        }
-      }
-
-      await loadVisitasData();
-      setSelectedPhoto(null);
-      router.push({
-        pathname: '/avaliador',
-        params: data?.id ? { visitId: String(data.id), propertyId: String(selectedProperty.id) } : undefined,
-      } as any);
-    } catch (error) {
-      console.error('Erro ao registrar visita do instrutor:', error);
-      Alert.alert('Erro ao registrar', getErrorMessage(error));
-    } finally {
-      setIsSubmittingVisit(false);
-    }
-  }, [loadVisitasData, profile?.id, selectedPhoto, selectedProperty, user?.id]);
-
   const pendingPropertiesCount = properties.length;
   const completedVisitsCount = history.length;
   const uploadStatusLabel = selectedPhoto ? 'Foto pronta para envio' : 'Aguardando evidência';
@@ -1066,50 +331,63 @@ export default function VisitasScreen() {
           </View>
 
           <View style={styles.heroStatsRow}>
-            <View style={styles.heroStatCard}>
-              <View style={styles.heroStatIcon}>
-                <Ionicons name="business-outline" size={16} color={THEME.leafLight} />
-              </View>
-              <Text style={styles.heroStatValue}>{pendingPropertiesCount}</Text>
-              <Text style={styles.heroStatLabel}>Disponíveis</Text>
-            </View>
+            <StatCard
+              icon="business-outline"
+              iconColor={THEME.leafLight}
+              value={pendingPropertiesCount}
+              label="Disponíveis"
+              containerStyle={styles.heroStatCard}
+              iconWrapStyle={styles.heroStatIcon}
+              valueStyle={styles.heroStatValue}
+              labelStyle={styles.heroStatLabel}
+            />
 
-            <View style={styles.heroStatCard}>
-              <View style={styles.heroStatIcon}>
-                <Ionicons name="images-outline" size={16} color={THEME.cornYellow} />
-              </View>
-              <Text style={styles.heroStatValue}>{selectedPhoto ? '1' : '0'}</Text>
-              <Text style={styles.heroStatLabel}>Foto pronta</Text>
-            </View>
+            <StatCard
+              icon="images-outline"
+              iconColor={THEME.cornYellow}
+              value={selectedPhoto ? '1' : '0'}
+              label="Foto pronta"
+              containerStyle={styles.heroStatCard}
+              iconWrapStyle={styles.heroStatIcon}
+              valueStyle={styles.heroStatValue}
+              labelStyle={styles.heroStatLabel}
+            />
 
-            <View style={styles.heroStatCard}>
-              <View style={styles.heroStatIcon}>
-                <Ionicons name="checkmark-done-outline" size={16} color={THEME.link} />
-              </View>
-              <Text style={styles.heroStatValue}>{completedVisitsCount}</Text>
-              <Text style={styles.heroStatLabel}>Realizadas</Text>
-            </View>
+            <StatCard
+              icon="checkmark-done-outline"
+              iconColor={THEME.link}
+              value={completedVisitsCount}
+              label="Realizadas"
+              containerStyle={styles.heroStatCard}
+              iconWrapStyle={styles.heroStatIcon}
+              valueStyle={styles.heroStatValue}
+              labelStyle={styles.heroStatLabel}
+            />
           </View>
         </View>
 
         {errorMessage ? (
-          <View style={styles.feedbackCard}>
-            <Ionicons name="alert-circle-outline" size={18} color={THEME.cornYellow} />
-            <Text style={styles.feedbackText}>{errorMessage}</Text>
-          </View>
+          <FeedbackCard
+            text={errorMessage}
+            iconColor={THEME.cornYellow}
+            containerStyle={styles.feedbackCard}
+            textStyle={styles.feedbackText}
+          />
         ) : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>NOVA EVIDÊNCIA</Text>
+        <SectionCard containerStyle={styles.section} title="NOVA EVIDÊNCIA" titleStyle={styles.sectionTitle}>
           <Text style={styles.helperText}>
             Escolha a propriedade para vincular a foto da visita realizada.
           </Text>
 
           {isLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={THEME.leafLight} size="large" />
-              <Text style={styles.loadingText}>Carregando propriedades atribuídas...</Text>
-            </View>
+            <LoadingState
+              color={THEME.leafLight}
+              size="large"
+              text="Carregando propriedades atribuídas..."
+              containerStyle={styles.loadingWrap}
+              textStyle={styles.loadingText}
+            />
           ) : selectedProperty ? (
             <View style={styles.selectionCard}>
               <View style={styles.selectionTop}>
@@ -1145,18 +423,20 @@ export default function VisitasScreen() {
               </View>
             </View>
           ) : (
-            <View style={styles.emptyBox}>
-              <Ionicons name="business-outline" size={26} color={THEME.textGray} />
-              <Text style={styles.emptyTitle}>Nenhuma propriedade atribuida</Text>
-              <Text style={styles.emptyText}>
-                Quando uma fazenda for vinculada ao seu usuário, ela aparecerá aqui para envio de evidências.
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon="business-outline"
+              iconColor={THEME.textGray}
+              title="Nenhuma propriedade atribuida"
+              description="Quando uma fazenda for vinculada ao seu usuário, ela aparecerá aqui para envio de evidências."
+              containerStyle={styles.emptyBox}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyText}
+              showIconWrap={false}
+            />
           )}
-        </View>
+        </SectionCard>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>UPLOAD DE FOTO</Text>
+        <SectionCard containerStyle={styles.section} title="UPLOAD DE FOTO" titleStyle={styles.sectionTitle}>
           <View style={styles.uploadStatusRow}>
             <View style={styles.uploadStatusBadge}>
               <Ionicons
@@ -1212,9 +492,9 @@ export default function VisitasScreen() {
               </>
             )}
           </View>
-        </View>
+        </SectionCard>
 
-        <View style={styles.section}>
+        <SectionCard containerStyle={styles.section}>
           <View style={styles.geoHeader}>
             <View>
               <Text style={styles.geoTitle}>Geolocalização extraída</Text>
@@ -1304,24 +584,28 @@ export default function VisitasScreen() {
             </Text>
             <Ionicons name="arrow-forward" size={18} color="#fff" />
           </TouchableOpacity>
-        </View>
+        </SectionCard>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>VISITAS REALIZADAS</Text>
+        <SectionCard containerStyle={styles.section} title="VISITAS REALIZADAS" titleStyle={styles.sectionTitle}>
 
           {isLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={THEME.leafLight} size="small" />
-              <Text style={styles.loadingText}>Carregando histórico...</Text>
-            </View>
+            <LoadingState
+              color={THEME.leafLight}
+              text="Carregando histórico..."
+              containerStyle={styles.loadingWrap}
+              textStyle={styles.loadingText}
+            />
           ) : history.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="clipboard-outline" size={26} color={THEME.textGray} />
-              <Text style={styles.emptyTitle}>Nenhuma visita registrada</Text>
-              <Text style={styles.emptyText}>
-                Assim que você concluir visitas, elas vão aparecer aqui.
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon="clipboard-outline"
+              iconColor={THEME.textGray}
+              title="Nenhuma visita registrada"
+              description="Assim que você concluir visitas, elas vão aparecer aqui."
+              containerStyle={styles.emptyBox}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyText}
+              showIconWrap={false}
+            />
           ) : (
             history.map((item) => (
               <View key={item.id} style={styles.historyRow}>
@@ -1342,7 +626,7 @@ export default function VisitasScreen() {
               </View>
             ))
           )}
-        </View>
+        </SectionCard>
       </ScrollView>
     </SafeAreaView>
   );

@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
   SafeAreaView,
   ScrollView,
@@ -11,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -23,9 +21,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/src/lib/supabase';
-import { colors } from '@/src/theme/colors';
+import { EmptyStateCard } from '@/features/instrutor/components/EmptyStateCard';
+import { LoadingState } from '@/features/instrutor/components/LoadingState';
+import { SectionCard } from '@/features/instrutor/components/SectionCard';
+import { StatCard } from '@/features/instrutor/components/StatCard';
+import { useInstructorReports } from '@/features/instrutor/hooks/useInstructorReports';
+import { PERIODOS, type Periodo } from '@/features/instrutor/types/reports';
+import { buildPeriodSummaryLabel, buildSectionPeriodLabel } from '@/features/instrutor/utils/reportFormatting';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -33,7 +35,6 @@ const THEME = {
   page: '#06180a',
   hero: '#0a2711',
   panel: '#0f2116',
-  panelStrong: '#12301b',
   starColor: 'rgba(255,255,255,0.18)',
   line: 'rgba(122, 217, 140, 0.14)',
   lineStrong: 'rgba(122, 217, 140, 0.28)',
@@ -41,87 +42,7 @@ const THEME = {
   primarySoft: 'rgba(89, 210, 124, 0.16)',
   yellow: '#f2c94c',
   textSoft: 'rgba(240, 247, 241, 0.72)',
-  textMuted: 'rgba(240, 247, 241, 0.55)',
 };
-
-const PERIODOS = ['7 dias', 'Mês', 'Ano'] as const;
-type Periodo = (typeof PERIODOS)[number];
-
-type VisitStatusDb =
-  | 'pendente'
-  | 'em_andamento'
-  | 'finalizada'
-  | 'em_analise'
-  | 'aprovada'
-  | 'rejeitada'
-  | 'excluida'
-  | null;
-
-type ReportVisitRow = {
-  id: number;
-  criado_em: string | null;
-  id_propriedade: number | null;
-  status_visita: VisitStatusDb;
-};
-
-type PropertyLookup = Record<number, { nome: string | null }>;
-
-type HistoryItem = {
-  id: string;
-  title: string;
-  date: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  status: string;
-};
-
-function getPeriodStart(periodo: Periodo) {
-  const now = new Date();
-
-  if (periodo === '7 dias') {
-    const start = new Date(now);
-    start.setDate(now.getDate() - 6);
-    start.setHours(0, 0, 0, 0);
-    return start;
-  }
-
-  if (periodo === 'Mês') {
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-
-  return new Date(now.getFullYear(), 0, 1);
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return '--/--/---- - --:--';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '--/--/---- - --:--';
-  }
-
-  return parsed.toLocaleString('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
-}
-
-function getVisitIcon(status?: VisitStatusDb): keyof typeof Ionicons.glyphMap {
-  if (status === 'pendente' || status === 'em_andamento') {
-    return 'paper-plane-outline';
-  }
-
-  return 'checkmark-done-outline';
-}
-
-function getVisitStatusLabel(status?: VisitStatusDb) {
-  if (status === 'pendente' || status === 'em_andamento') {
-    return 'Enviada';
-  }
-
-  return 'Concluída';
-}
 
 const STARS = Array.from({ length: 25 }, (_, i) => ({
   id: i,
@@ -223,122 +144,7 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
 }));
 
 export default function RelatoriosScreen() {
-  const { profile, user } = useAuth();
-  const [periodoAtivo, setPeriodoAtivo] = useState<Periodo>('Mês');
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [reloadToken, setReloadToken] = useState(0);
-  const hasFocusedOnceRef = useRef(false);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadRelatorios() {
-      const currentUserId = profile?.id ?? user?.id;
-
-      if (!currentUserId) {
-        if (mounted) {
-          setHistory([]);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      try {
-        setIsLoading(true);
-        setErrorMessage('');
-
-        const start = getPeriodStart(periodoAtivo);
-        const { data: visitsData, error: visitsError } = await supabase
-          .from('visitas')
-          .select('id, criado_em, id_propriedade, status_visita')
-          .eq('id_instrutor', currentUserId)
-          .gte('criado_em', start.toISOString())
-          .order('criado_em', { ascending: false });
-
-        if (visitsError) {
-          throw visitsError;
-        }
-
-        const visits = (visitsData ?? []) as ReportVisitRow[];
-        const propertyIds = Array.from(
-          new Set(visits.map((item) => item.id_propriedade).filter((value): value is number => typeof value === 'number'))
-        );
-
-        let propertyLookup: PropertyLookup = {};
-
-        if (propertyIds.length > 0) {
-          const { data: propertiesData, error: propertiesError } = await supabase
-            .from('propriedades')
-            .select('id, nome')
-            .in('id', propertyIds);
-
-          if (propertiesError) {
-            throw propertiesError;
-          }
-
-          propertyLookup = (propertiesData ?? []).reduce<PropertyLookup>((acc, property) => {
-            acc[property.id] = property;
-            return acc;
-          }, {});
-        }
-
-        const nextHistory = visits.map((visit, index) => ({
-          id: String(visit.id),
-          title:
-            (visit.id_propriedade ? propertyLookup[visit.id_propriedade]?.nome : null) ??
-            `Visita ${index + 1}`,
-          date: formatDateTime(visit.criado_em),
-          icon: getVisitIcon(visit.status_visita),
-          status: getVisitStatusLabel(visit.status_visita),
-        }));
-
-        if (mounted) {
-          setHistory(nextHistory);
-        }
-      } catch (error) {
-        console.error('Erro ao carregar relatórios do instrutor:', error);
-        if (mounted) {
-          setErrorMessage('Não foi possível carregar os relatórios agora.');
-          setHistory([]);
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    loadRelatorios();
-
-    return () => {
-      mounted = false;
-    };
-  }, [periodoAtivo, profile?.id, reloadToken, user?.id]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!hasFocusedOnceRef.current) {
-        hasFocusedOnceRef.current = true;
-        return;
-      }
-
-      setReloadToken((current) => current + 1);
-    }, [])
-  );
-
-  const visitsLabel = useMemo(() => {
-    if (periodoAtivo === '7 dias') {
-      return 'Visitas em 7 dias';
-    }
-
-    if (periodoAtivo === 'Mês') {
-      return 'Visitas no mês';
-    }
-
-    return 'Visitas no ano';
-  }, [periodoAtivo]);
+  const { errorMessage, history, isLoading, periodoAtivo, setPeriodoAtivo, visitsLabel } = useInstructorReports();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -373,7 +179,7 @@ export default function RelatoriosScreen() {
           <View style={styles.scoreCard}>
             <View style={styles.scoreCardCopy}>
               <Text style={styles.scoreCaption}>
-                Resumo de visitas em {periodoAtivo === 'Mês' ? 'mês' : periodoAtivo.toLowerCase()}
+                Resumo de visitas em {buildPeriodSummaryLabel(periodoAtivo)}
               </Text>
               <Text style={styles.scoreSummaryTitle}>Acompanhe seu histórico de campo</Text>
               <Text style={styles.scoreSummaryText}>
@@ -387,36 +193,51 @@ export default function RelatoriosScreen() {
         </View>
 
         <View style={styles.summaryGrid}>
-          <View style={styles.summaryCardWide}>
-            <Ionicons name="clipboard-outline" size={22} color={THEME.yellow} />
-            <Text style={styles.summaryValue}>{isLoading ? '...' : String(history.length)}</Text>
-            <Text style={styles.summaryLabel}>{visitsLabel}</Text>
-          </View>
+          <StatCard
+            icon="clipboard-outline"
+            iconColor={THEME.yellow}
+            value={isLoading ? '...' : String(history.length)}
+            label={visitsLabel}
+            containerStyle={styles.summaryCardWide}
+            iconWrapStyle={styles.summaryIconWrap}
+            valueStyle={styles.summaryValue}
+            labelStyle={styles.summaryLabel}
+          />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            HISTÓRICO DE VISITAS - {periodoAtivo === 'Mês' ? 'MÊS' : periodoAtivo.toUpperCase()}
-          </Text>
+        <SectionCard
+          containerStyle={styles.section}
+          title={`HISTÓRICO DE VISITAS - ${buildSectionPeriodLabel(periodoAtivo)}`}
+          titleStyle={styles.sectionTitle}>
           {isLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={THEME.primary} size="small" />
-              <Text style={styles.loadingText}>Carregando histórico...</Text>
-            </View>
+            <LoadingState
+              color={THEME.primary}
+              text="Carregando histórico..."
+              containerStyle={styles.loadingWrap}
+              textStyle={styles.loadingText}
+            />
           ) : errorMessage ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="alert-circle-outline" size={24} color={THEME.yellow} />
-              <Text style={styles.emptyTitle}>Relatórios indisponíveis</Text>
-              <Text style={styles.emptyDescription}>{errorMessage}</Text>
-            </View>
+            <EmptyStateCard
+              icon="alert-circle-outline"
+              iconColor={THEME.yellow}
+              title="Relatórios indisponíveis"
+              description={errorMessage}
+              containerStyle={styles.emptyState}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyDescription}
+              showIconWrap={false}
+            />
           ) : history.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="clipboard-outline" size={24} color={THEME.textSoft} />
-              <Text style={styles.emptyTitle}>Nenhuma visita no período</Text>
-              <Text style={styles.emptyDescription}>
-                Quando houver visitas nesse filtro, elas vão aparecer aqui.
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon="clipboard-outline"
+              iconColor={THEME.textSoft}
+              title="Nenhuma visita no período"
+              description="Quando houver visitas nesse filtro, elas vão aparecer aqui."
+              containerStyle={styles.emptyState}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyDescription}
+              showIconWrap={false}
+            />
           ) : (
             history.map((item) => (
               <TouchableOpacity key={item.id} activeOpacity={0.9} style={styles.historyRow}>
@@ -431,7 +252,7 @@ export default function RelatoriosScreen() {
               </TouchableOpacity>
             ))
           )}
-        </View>
+        </SectionCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -487,6 +308,7 @@ const styles = StyleSheet.create({
   },
   summaryValue: { marginTop: 10, color: '#fff', fontSize: 34, fontWeight: '800' },
   summaryLabel: { color: THEME.textSoft, fontSize: 13, marginTop: 2, textAlign: 'center' },
+  summaryIconWrap: { backgroundColor: 'transparent', marginBottom: 0 },
   section: {
     backgroundColor: THEME.panel,
     borderRadius: 24,
