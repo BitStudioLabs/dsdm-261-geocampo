@@ -12,6 +12,8 @@ export type VisitHistoryItem = {
   data: string;
   hora: string;
   status: 'Concluída' | 'Enviada';
+  isOfflineQueue?: boolean;
+  syncStatus?: 'pending' | 'failed';
 };
 
 export type VisitStatusDb =
@@ -69,4 +71,22 @@ export type SelectedPhoto = {
   hasExif: boolean;
   hasGps: boolean;
   exifFieldCount: number;
+};
+
+export type QueuedVisitRecord = {
+  localId: string;
+  userId: string;
+  property: PropertyOption;
+  selectedPhoto: SelectedPhoto;
+  createdAt: string;
+  remoteVisitId?: number | null;
+  syncStatus: 'pending' | 'failed';
+  lastError?: string | null;
+};
+
+export type CreateVisitResult = {
+  visitId: number | null;
+  propertyId: number;
+  queuedOffline: boolean;
+  localId?: string | null;
 };

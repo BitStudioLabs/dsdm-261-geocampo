@@ -56,6 +56,7 @@ export default function DashboardScreen() {
     filteredProperties,
     handleRefresh,
     isLoading,
+    isOfflineMode,
     refreshing,
     sectionCopy,
     setActiveFilter,
@@ -126,6 +127,12 @@ export default function DashboardScreen() {
                   <Text style={styles.greeting}>Painel do instrutor</Text>
                   <Text style={styles.userName}>Olá, {shortName}</Text>
                   <Text style={styles.userSubtitle}>{activeSummaryText}</Text>
+                  {isOfflineMode ? (
+                    <View style={styles.offlinePill}>
+                      <Ionicons name="cloud-offline-outline" size={14} color={THEME.yellow} />
+                      <Text style={styles.offlinePillText}>Modo offline</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={styles.avatarShell}>
@@ -201,8 +208,9 @@ export default function DashboardScreen() {
             {errorMessage ? (
               <FeedbackCard
                 text={errorMessage}
+                icon={isOfflineMode ? 'cloud-offline-outline' : 'alert-circle-outline'}
                 iconColor={THEME.yellow}
-                containerStyle={styles.feedbackCard}
+                containerStyle={[styles.feedbackCard, isOfflineMode && styles.feedbackCardOffline]}
                 textStyle={styles.feedbackText}
               />
             ) : null}
@@ -248,6 +256,8 @@ const styles = StyleSheet.create({
   greeting: { color: THEME.primary, fontSize: 13, fontWeight: '700', marginBottom: 4 },
   userName: { color: '#fff', fontSize: 30, lineHeight: 34, fontWeight: '800', marginBottom: 6 },
   userSubtitle: { color: THEME.textSoft, fontSize: 14, lineHeight: 20 },
+  offlinePill: { marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(242,201,76,0.12)', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(242,201,76,0.18)', paddingHorizontal: 10, paddingVertical: 6 },
+  offlinePillText: { color: THEME.yellow, fontSize: 12, fontWeight: '700' },
   avatarShell: { width: 54, height: 54, borderRadius: 18, overflow: 'hidden', backgroundColor: '#93663d', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)' },
   avatarImage: { width: '100%', height: '100%' },
   heroCard: { backgroundColor: THEME.hero, borderRadius: 26, borderWidth: 1, borderColor: THEME.lineStrong, padding: 18, flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
@@ -255,9 +265,9 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: THEME.primary, fontSize: 12, fontWeight: '700', marginBottom: 6 },
   heroTitle: { color: '#fff', fontSize: 22, lineHeight: 28, fontWeight: '800', marginBottom: 8 },
   heroDescription: { color: THEME.textSoft, fontSize: 14, lineHeight: 20 },
-  heroMetric: { minWidth: 68, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 16, backgroundColor: THEME.primarySoft, alignItems: 'center' },
-  heroMetricLabel: { color: THEME.primary, fontSize: 10, fontWeight: '700', marginBottom: 3, textTransform: 'uppercase' },
-  heroMetricValue: { color: '#fff', fontSize: 22, lineHeight: 26, fontWeight: '800' },
+  heroMetric: { minWidth: 54, maxWidth: 60, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 14, backgroundColor: THEME.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  heroMetricLabel: { color: THEME.primary, fontSize: 9, fontWeight: '700', marginBottom: 2, textTransform: 'uppercase' },
+  heroMetricValue: { color: '#fff', fontSize: 20, lineHeight: 22, fontWeight: '800' },
   segmentWrap: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 20 },
   segmentCard: { flex: 1, backgroundColor: THEME.panel, borderRadius: 22, borderWidth: 1, borderColor: THEME.line, padding: 14 },
   segmentCardActive: { backgroundColor: THEME.heroSoft, borderColor: THEME.primary, shadowColor: THEME.primary, shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
@@ -274,6 +284,7 @@ const styles = StyleSheet.create({
   counterPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: THEME.panel, borderRadius: 999, borderWidth: 1, borderColor: THEME.line, paddingHorizontal: 12, paddingVertical: 8 },
   counterPillText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   feedbackCard: { marginHorizontal: 20, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(242,201,76,0.12)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(242,201,76,0.18)', padding: 14 },
+  feedbackCardOffline: { backgroundColor: 'rgba(242,201,76,0.1)' },
   feedbackText: { flex: 1, color: '#f2dfaa', fontSize: 13, lineHeight: 18 },
   loadingWrap: { paddingHorizontal: 20, paddingVertical: 34, alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: THEME.textSoft, fontSize: 13, marginTop: 12 },
@@ -296,4 +307,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 6 },
   emptyDescription: { color: THEME.textSoft, fontSize: 13, lineHeight: 19, textAlign: 'center' },
 });
+
+
+
 
