@@ -169,8 +169,12 @@ export default function VisitasScreen() {
     handleRefresh,
     history,
     isLoading,
+    isOfflineMode,
     isSubmittingVisit,
+    isSyncingQueue,
+    handleSyncNow,
     properties,
+    queuedVisitsCount,
     refreshing,
     selectedPhoto,
     selectedProperty,
@@ -369,10 +373,38 @@ export default function VisitasScreen() {
         {errorMessage ? (
           <FeedbackCard
             text={errorMessage}
+            icon={isOfflineMode ? 'cloud-offline-outline' : 'alert-circle-outline'}
             iconColor={THEME.cornYellow}
-            containerStyle={styles.feedbackCard}
+            containerStyle={[styles.feedbackCard, isOfflineMode && styles.feedbackCardOffline]}
             textStyle={styles.feedbackText}
           />
+        ) : null}
+
+        {queuedVisitsCount > 0 ? (
+          <View style={styles.syncCard}>
+            <View style={styles.syncCardCopy}>
+              <View style={styles.syncBadge}>
+                <Ionicons name="cloud-offline-outline" size={14} color={THEME.cornYellow} />
+                <Text style={styles.syncBadgeText}>
+                  {queuedVisitsCount} pendente{queuedVisitsCount > 1 ? 's' : ''}
+                </Text>
+              </View>
+              <Text style={styles.syncTitle}>Visitas salvas no aparelho</Text>
+              <Text style={styles.syncText}>
+                Mesmo sem internet, você pode continuar registrando visitas. Quando a conexão voltar, sincronize daqui.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.92}
+              style={[styles.syncButton, isSyncingQueue && styles.syncButtonDisabled]}
+              onPress={handleSyncNow}
+              disabled={isSyncingQueue}>
+              <Text style={styles.syncButtonText}>
+                {isSyncingQueue ? 'Sincronizando...' : 'Sincronizar agora'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         <SectionCard containerStyle={styles.section} title="NOVA EVIDÊNCIA" titleStyle={styles.sectionTitle}>
@@ -426,7 +458,7 @@ export default function VisitasScreen() {
             <EmptyStateCard
               icon="business-outline"
               iconColor={THEME.textGray}
-              title="Nenhuma propriedade atribuida"
+              title="Nenhuma propriedade atribuída"
               description="Quando uma fazenda for vinculada ao seu usuário, ela aparecerá aqui para envio de evidências."
               containerStyle={styles.emptyBox}
               titleStyle={styles.emptyTitle}
@@ -767,6 +799,63 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  feedbackCardOffline: {
+    backgroundColor: 'rgba(242,201,76,0.1)',
+  },
+  syncCard: {
+    marginHorizontal: 18,
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(242,201,76,0.18)',
+    backgroundColor: 'rgba(242,201,76,0.08)',
+    padding: 14,
+    gap: 12,
+  },
+  syncCardCopy: {
+    gap: 8,
+  },
+  syncBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(242,201,76,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  syncBadgeText: {
+    color: THEME.cornYellow,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  syncTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  syncText: {
+    color: THEME.textSoft,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  syncButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: THEME.cornYellow,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  syncButtonDisabled: {
+    opacity: 0.55,
+  },
+  syncButtonText: {
+    color: THEME.skyTop,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
   sectionTitle: {
     color: THEME.link,
     fontSize: 12,
@@ -908,7 +997,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(245,200,66,0.25)',
   },
-  uploadTitle: { color: colors.textDark, fontSize: 24, fontWeight: '800', marginBottom: 6 },
+  uploadTitle: { color: '#fff', fontSize: 24, fontWeight: '800', marginBottom: 6 },
   uploadSubtitle: {
     color: THEME.textSoft,
     fontSize: 13,
@@ -1125,3 +1214,6 @@ const styles = StyleSheet.create({
   },
   historyBadgeText: { fontSize: 12, fontWeight: '700' },
 });
+
+
+

@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { createInstructorVisit, fetchInstructorVisitsData } from '@/features/instrutor/api/visitas';
+import { createInstructorVisit, fetchInstructorVisitsData, syncQueuedInstructorVisits } from '@/features/instrutor/api/visitas';
 import type { PropertyOption, SelectedPhoto, VisitHistoryItem } from '@/features/instrutor/types/visitas';
 import {
   buildSelectedPhoto,
@@ -16,10 +16,13 @@ export function useInstructorVisits() {
   const { profile, user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmittingVisit, setIsSubmittingVisit] = useState(false);
+  const [isSyncingQueue, setIsSyncingQueue] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [history, setHistory] = useState<VisitHistoryItem[]>([]);
+  const [queuedVisitsCount, setQueuedVisitsCount] = useState(0);
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
   const hasFocusedOnceRef = useRef(false);
@@ -28,19 +31,30 @@ export function useInstructorVisits() {
     const currentUserId = profile?.id ?? user?.id;
 
     if (!currentUserId) {
+      setErrorMessage('');
+      setIsOfflineMode(false);
       setProperties([]);
       setHistory([]);
+      setQueuedVisitsCount(0);
       setSelectedPropertyId(null);
       setIsLoading(false);
       return;
     }
 
-    setErrorMessage('');
+    await syncQueuedInstructorVisits(currentUserId);
 
-    const { properties: nextProperties, history: nextHistory } = await fetchInstructorVisitsData(currentUserId);
+    const {
+      properties: nextProperties,
+      history: nextHistory,
+      queuedVisitsCount: nextQueuedVisitsCount,
+      isOfflineMode: nextIsOfflineMode,
+    } = await fetchInstructorVisitsData(currentUserId);
 
     setProperties(nextProperties);
     setHistory(nextHistory);
+    setQueuedVisitsCount(nextQueuedVisitsCount);
+    setIsOfflineMode(nextIsOfflineMode);
+    setErrorMessage(nextIsOfflineMode ? 'Você está offline. Exibindo as propriedades e visitas salvas no aparelho.' : '');
     setSelectedPropertyId((current) =>
       nextProperties.some((item) => item.id === current) ? current ?? null : nextProperties[0]?.id ?? null
     );
@@ -56,6 +70,7 @@ export function useInstructorVisits() {
       } catch (error) {
         console.error('Erro ao carregar tela de visitas:', error);
         if (mounted) {
+          setIsOfflineMode(false);
           setErrorMessage('Não foi possível carregar suas visitas agora.');
           setProperties([]);
           setHistory([]);
@@ -114,11 +129,49 @@ export function useInstructorVisits() {
       await loadVisitasData();
     } catch (error) {
       console.error('Erro ao atualizar tela de visitas:', error);
+      setIsOfflineMode(false);
       setErrorMessage('Não foi possível atualizar suas visitas agora.');
     } finally {
       setRefreshing(false);
     }
   }, [loadVisitasData]);
+
+  const handleSyncNow = useCallback(async () => {
+    const currentUserId = profile?.id ?? user?.id;
+
+    if (!currentUserId || queuedVisitsCount === 0) {
+      return;
+    }
+
+    try {
+      setIsSyncingQueue(true);
+      const result = await syncQueuedInstructorVisits(currentUserId);
+      await loadVisitasData();
+
+      if (result.syncedCount > 0 && result.remainingCount === 0) {
+        Alert.alert('Sincronização concluída', 'Todas as visitas offline foram enviadas com sucesso.');
+        return;
+      }
+
+      if (result.syncedCount > 0) {
+        Alert.alert(
+          'Sincronização parcial',
+          `${result.syncedCount} visita(s) foram sincronizadas. Ainda restam ${result.remainingCount} pendente(s).`
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Sem conexão estável',
+        'As visitas continuam salvas no aparelho e serão enviadas quando a internet voltar.'
+      );
+    } catch (error) {
+      console.error('Erro ao sincronizar visitas offline:', error);
+      Alert.alert('Erro ao sincronizar', getPhotoMetadataErrorMessage(error));
+    } finally {
+      setIsSyncingQueue(false);
+    }
+  }, [loadVisitasData, profile?.id, queuedVisitsCount, user?.id]);
 
   const handlePickImage = useCallback(async () => {
     try {
@@ -171,15 +224,24 @@ export function useInstructorVisits() {
 
       const result = await createInstructorVisit({
         currentUserId,
-        propertyId: selectedProperty.id,
+        property: selectedProperty,
         selectedPhoto,
       });
 
       await loadVisitasData();
       setSelectedPhoto(null);
+
+      if (result.queuedOffline || !result.visitId) {
+        Alert.alert(
+          'Visita salva offline',
+          'A foto foi guardada no aparelho e será sincronizada automaticamente quando a conexão voltar.'
+        );
+        return;
+      }
+
       router.push({
         pathname: '/avaliador',
-        params: result.visitId ? { visitId: String(result.visitId), propertyId: String(selectedProperty.id) } : undefined,
+        params: { visitId: String(result.visitId), propertyId: String(selectedProperty.id) },
       } as never);
     } catch (error) {
       console.error('Erro ao registrar visita do instrutor:', error);
@@ -195,10 +257,14 @@ export function useInstructorVisits() {
     handleCreateVisit,
     handlePickImage,
     handleRefresh,
+    handleSyncNow,
     history,
     isLoading,
+    isOfflineMode,
     isSubmittingVisit,
+    isSyncingQueue,
     properties,
+    queuedVisitsCount,
     refreshing,
     selectedPhoto,
     selectedProperty,

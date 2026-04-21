@@ -16,6 +16,7 @@ export function useInstructorDashboard() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarStoragePath, setAvatarStoragePath] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [assignedItems, setAssignedItems] = useState<DashboardItem[]>([]);
   const [completedItems, setCompletedItems] = useState<DashboardItem[]>([]);
   const [stats, setStats] = useState<DashboardStats>({ atribuidas: '0', hoje: '0', concluidas: '0' });
@@ -25,6 +26,8 @@ export function useInstructorDashboard() {
     const currentUserId = profile?.id ?? user?.id;
 
     if (!currentUserId) {
+      setIsOfflineMode(false);
+      setErrorMessage('');
       setAssignedItems([]);
       setCompletedItems([]);
       setStats({ atribuidas: '0', hoje: '0', concluidas: '0' });
@@ -33,11 +36,12 @@ export function useInstructorDashboard() {
       return;
     }
 
-    setErrorMessage('');
     const nextData = await fetchInstructorDashboardData(currentUserId);
     setAssignedItems(nextData.assignedItems);
     setCompletedItems(nextData.completedItems);
     setStats(nextData.stats);
+    setIsOfflineMode(nextData.isOfflineMode);
+    setErrorMessage(nextData.isOfflineMode ? 'Você está offline. Exibindo as propriedades salvas no aparelho.' : '');
   }, [profile?.id, user?.id]);
 
   useEffect(() => {
@@ -50,6 +54,7 @@ export function useInstructorDashboard() {
       } catch (error) {
         console.error('Erro ao carregar painel do instrutor:', error);
         if (mounted) {
+          setIsOfflineMode(false);
           setErrorMessage('Não foi possível carregar suas visitas agora.');
           setAssignedItems([]);
           setCompletedItems([]);
@@ -186,6 +191,7 @@ export function useInstructorDashboard() {
     filteredProperties,
     handleRefresh,
     isLoading,
+    isOfflineMode,
     refreshing,
     sectionCopy,
     setActiveFilter,
