@@ -183,7 +183,7 @@ export function useProprietarioPerfil() {
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permissao necessaria', 'Permita acesso a galeria para alterar a foto.');
+      Alert.alert('Permissão necessaria', 'Permita acesso a galeria para alterar a foto.');
       return;
     }
 
@@ -239,7 +239,7 @@ export function useProprietarioPerfil() {
         await logout();
         router.replace('/login');
       } catch {
-        Alert.alert('Erro ao sair', 'Nao foi possivel sair da conta agora.');
+        Alert.alert('Erro ao sair', 'Não foi possivel sair da conta agora.');
       }
     };
 

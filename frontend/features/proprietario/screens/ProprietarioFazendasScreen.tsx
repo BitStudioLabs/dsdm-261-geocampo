@@ -40,7 +40,7 @@ export default function ProprietarioFazendasScreen() {
           }
         }
       } catch (error) {
-        console.warn('Nao foi possivel ler paginacao de fazendas', error);
+        console.warn('Não foi possível ler paginação de fazendas', error);
       }
     };
 
@@ -49,7 +49,7 @@ export default function ProprietarioFazendasScreen() {
 
   useEffect(() => {
     AsyncStorage.setItem('@proprietario_fazendas_pageSize', String(pageSize)).catch((error) => {
-      console.warn('Nao foi possivel salvar paginacao de fazendas', error);
+      console.warn('Não foi possível salvar paginação de fazendas', error);
     });
   }, [pageSize]);
 
@@ -118,7 +118,7 @@ export default function ProprietarioFazendasScreen() {
             <Text style={styles.emptySubtitle}>
               {properties.length
                 ? 'Nenhuma propriedade corresponde ao filtro atual.'
-                : 'Ainda nao existem propriedades vinculadas ao seu cadastro.'}
+                : 'Ainda não existem propriedades vinculadas ao seu cadastro.'}
             </Text>
           </View>
         ) : (
@@ -144,7 +144,7 @@ export default function ProprietarioFazendasScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.propertyName}>{item.nome}</Text>
                     <Text style={styles.propertyMeta}>
-                      {item.municipio_nome ?? 'Municipio nao informado'}
+                      {item.municipio_nome ?? 'Municipio não informado'}
                       {item.uf ? ` - ${item.uf}` : ''}
                     </Text>
                   </View>
@@ -161,7 +161,7 @@ export default function ProprietarioFazendasScreen() {
 
                 <View style={styles.infoGrid}>
                   <InfoBox label="Area total" value={`${formatArea(Number(item.area_total ?? 0))} ha`} />
-                  <InfoBox label="Contato" value={item.telefone ?? 'Nao informado'} />
+                  <InfoBox label="Contato" value={item.telefone ?? 'Não informado'} />
                 </View>
 
                 <InfoLine
@@ -172,7 +172,7 @@ export default function ProprietarioFazendasScreen() {
                       : 'Nenhum instrutor vinculado no momento'
                   }
                 />
-                <InfoLine icon="location-outline" text={item.bairro ?? 'Bairro/zona nao informado'} />
+                <InfoLine icon="location-outline" text={item.bairro ?? 'Bairro/zona não informado'} />
                 <InfoLine icon="flag-outline" text={item.referencia ?? 'Sem referencia cadastrada'} />
                 <InfoLine icon="navigate-outline" text={item.como_chegar ?? 'Sem instrucoes de acesso cadastradas'} />
               </View>

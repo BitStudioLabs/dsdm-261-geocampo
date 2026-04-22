@@ -78,7 +78,7 @@ export default function ProprietarioHomeScreen() {
             <View style={styles.highlightCard}>
               <Text style={styles.highlightTitle}>{highlightedProperty.nome}</Text>
               <Text style={styles.highlightMeta}>
-                {highlightedProperty.municipio_nome ?? 'Municipio nao informado'}
+                {highlightedProperty.municipio_nome ?? 'Municipio não informado'}
                 {highlightedProperty.uf ? ` - ${highlightedProperty.uf}` : ''}
               </Text>
               <View style={styles.highlightRow}>

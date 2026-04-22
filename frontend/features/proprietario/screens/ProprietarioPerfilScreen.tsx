@@ -94,7 +94,7 @@ export default function PerfilProprietarioScreen() {
             </View>
 
             <View style={styles.inlineCard}><Ionicons name="mail-outline" size={16} color={THEME.primary} /><Text style={styles.inlineText}>{profile?.email ?? state.producer?.email ?? user?.email ?? 'Sem e-mail'}</Text></View>
-            <View style={styles.inlineCard}><Ionicons name="call-outline" size={16} color={THEME.yellow} /><Text style={styles.inlineText}>{profile?.telefone ?? state.producer?.telefone ?? 'Nao informado'}</Text></View>
+            <View style={styles.inlineCard}><Ionicons name="call-outline" size={16} color={THEME.yellow} /><Text style={styles.inlineText}>{profile?.telefone ?? state.producer?.telefone ?? 'Não informado'}</Text></View>
 
             <View style={styles.profileActions}>
               <TouchableOpacity style={styles.profileActionButton} onPress={() => setPhotoVisible(true)} activeOpacity={0.9} disabled={uploading}>
@@ -119,9 +119,9 @@ export default function PerfilProprietarioScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cadastro do Proprietario</Text>
           <InfoRow label="Nome" value={displayName} />
-          <InfoRow label="CPF / CNPJ" value={state.producer?.cpf_cnpj ?? 'Nao informado'} />
-          <InfoRow label="Telefone" value={profile?.telefone ?? state.producer?.telefone ?? 'Nao informado'} />
-          <InfoRow label="E-mail" value={profile?.email ?? state.producer?.email ?? user?.email ?? 'Nao informado'} />
+          <InfoRow label="CPF / CNPJ" value={state.producer?.cpf_cnpj ?? 'Não informado'} />
+          <InfoRow label="Telefone" value={profile?.telefone ?? state.producer?.telefone ?? 'Não informado'} />
+          <InfoRow label="E-mail" value={profile?.email ?? state.producer?.email ?? user?.email ?? 'Não informado'} />
         </View>
 
         <View style={styles.section}>

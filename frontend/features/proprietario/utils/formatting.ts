@@ -15,8 +15,8 @@ export function statusLabel(status: string | null) {
 export function leaseLabel(status: string | null) {
   if (status === 'arrendada') return 'Arrendada';
   if (status === 'parcialmente_arrendada') return 'Parcialmente arrendada';
-  if (status === 'nao_arrendada') return 'Nao arrendada';
-  return 'Sem informacao';
+  if (status === 'nao_arrendada') return 'Não arrendada';
+  return 'Sem informação';
 }
 
 export function getErrorMessage(error: unknown) {
@@ -28,7 +28,7 @@ export function getErrorMessage(error: unknown) {
 }
 
 export function formatMemberSince(value: string | null | undefined) {
-  if (!value) return 'Nao informado';
+  if (!value) return 'Não informado';
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(value));
 }
 
