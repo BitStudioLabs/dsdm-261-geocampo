@@ -205,7 +205,7 @@ export async function uploadProducerAvatar({
   const publicUrl = supabase.storage.from('avatares').getPublicUrl(filePath).data.publicUrl;
   const { error: updateError } = await supabase
     .from('usuarios')
-    .update({ foto_url: publicUrl, atualizado_em: new Date().toISOString() })
+    .update({ foto_url: publicUrl, foto_path: filePath, atualizado_em: new Date().toISOString() })
     .eq('id', userId);
   if (updateError) throw updateError;
 
@@ -228,4 +228,9 @@ export async function hydrateSavedAvatarPath(avatarKey: string) {
 
 export async function persistAvatarPath(avatarKey: string, avatarPath: string) {
   return AsyncStorage.setItem(avatarKey, avatarPath);
+}
+
+export async function updateProducerPassword(password: string) {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
 }

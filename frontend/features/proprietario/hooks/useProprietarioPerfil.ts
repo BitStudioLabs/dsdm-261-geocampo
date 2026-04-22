@@ -9,6 +9,7 @@ import {
   hydrateSavedAvatarPath,
   persistAvatarPath,
   resolveProducerAvatarUrl,
+  updateProducerPassword,
   updateProducerProfile,
   uploadProducerAvatar,
 } from '@/features/proprietario/api/proprietario';
@@ -28,13 +29,17 @@ export function useProprietarioPerfil() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [photoVisible, setPhotoVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [state, setState] = useState<ProducerProfileState>(EMPTY_STATE);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const hasFocusedOnceRef = useRef(false);
 
   const avatarKey = userId ? getAvatarStorageKey(userId) : null;
@@ -139,6 +144,16 @@ export function useProprietarioPerfil() {
     if (!saving) setEditVisible(false);
   }, [saving]);
 
+  const openPassword = useCallback(() => {
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordVisible(true);
+  }, []);
+
+  const closePassword = useCallback(() => {
+    if (!savingPassword) setPasswordVisible(false);
+  }, [savingPassword]);
+
   const saveProfile = useCallback(async () => {
     if (!userId || !editName.trim()) {
       Alert.alert('Dados invalidos', 'Informe um nome para salvar.');
@@ -190,6 +205,34 @@ export function useProprietarioPerfil() {
     }
   }, [avatarKey, refreshProfile, userId]);
 
+  const savePassword = useCallback(async () => {
+    const password = newPassword.trim();
+    const confirmation = confirmPassword.trim();
+
+    if (password.length < 8) {
+      Alert.alert('Senha invalida', 'A nova senha precisa ter pelo menos 8 caracteres.');
+      return;
+    }
+
+    if (password !== confirmation) {
+      Alert.alert('Senhas diferentes', 'Confirme a nova senha corretamente.');
+      return;
+    }
+
+    try {
+      setSavingPassword(true);
+      await updateProducerPassword(password);
+      setPasswordVisible(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Senha atualizada', 'Sua senha foi alterada com sucesso.');
+    } catch (error) {
+      Alert.alert('Erro ao alterar senha', getErrorMessage(error));
+    } finally {
+      setSavingPassword(false);
+    }
+  }, [confirmPassword, newPassword]);
+
   const handleLogout = useCallback(() => {
     const confirmAndLogout = async () => {
       try {
@@ -215,6 +258,8 @@ export function useProprietarioPerfil() {
     activeProperties,
     avatarUrl,
     closeEdit,
+    closePassword,
+    confirmPassword,
     displayName,
     editName,
     editPhone,
@@ -224,14 +269,21 @@ export function useProprietarioPerfil() {
     loading,
     memberSince,
     openEdit,
+    openPassword,
+    newPassword,
+    passwordVisible,
     photoVisible,
     pickPhoto,
     profile,
     refreshing,
     saveProfile,
+    savePassword,
     saving,
+    savingPassword,
+    setConfirmPassword,
     setEditName,
     setEditPhone,
+    setNewPassword,
     setPhotoVisible,
     state,
     totalArea,
