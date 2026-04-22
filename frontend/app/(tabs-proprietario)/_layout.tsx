@@ -6,10 +6,10 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 
 const THEME = {
-  skyTop: '#0f281a',
-  leafLight: '#74d27d',
-  gold: '#d8b45b',
-  cardBg: 'rgba(15,40,26,0.95)',
+  page: '#06180a',
+  primary: '#59d27c',
+  cardBg: 'rgba(10,31,13,0.95)',
+  line: 'rgba(122, 217, 140, 0.2)',
 };
 
 export default function ProprietarioTabsLayout() {
@@ -28,8 +28,8 @@ export default function ProprietarioTabsLayout() {
 
   if (isLoading || !isAuthenticated || homeRoute !== '/(tabs-proprietario)') {
     return (
-      <View style={{ flex: 1, backgroundColor: THEME.skyTop, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={THEME.leafLight} size="large" />
+      <View style={{ flex: 1, backgroundColor: THEME.page, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={THEME.primary} size="large" />
       </View>
     );
   }
@@ -38,8 +38,9 @@ export default function ProprietarioTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: THEME.gold,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.48)',
+        tabBarActiveTintColor: THEME.primary,
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.45)',
+        tabBarShowLabel: true,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: 2 },
         tabBarStyle: {
           position: 'absolute',
@@ -53,29 +54,48 @@ export default function ProprietarioTabsLayout() {
           paddingBottom: 12,
           backgroundColor: THEME.cardBg,
           borderWidth: 1,
-          borderColor: 'rgba(216,180,91,0.22)',
+          borderColor: THEME.line,
+          elevation: 14,
+          shadowColor: THEME.primary,
+          shadowOpacity: 0.15,
+          shadowOffset: { width: 0, height: 8 },
+          shadowRadius: 18,
         },
-        sceneStyle: { backgroundColor: THEME.skyTop },
+        tabBarItemStyle: {
+          borderRadius: 18,
+          marginHorizontal: 4,
+          paddingVertical: 4,
+        },
+        tabBarIconStyle: {
+          marginBottom: 0,
+        },
+        sceneStyle: { backgroundColor: THEME.page },
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Inicio',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="fazendas"
         options={{
           title: 'Fazendas',
-          tabBarIcon: ({ color, size }) => <Ionicons name="business-outline" size={size} color={color} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'business' : 'business-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="perfil"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-circle-outline" size={size} color={color} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
+          ),
         }}
       />
     </Tabs>
