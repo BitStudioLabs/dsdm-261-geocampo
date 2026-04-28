@@ -20,6 +20,7 @@ export default function RootLayout() {
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs-gestor)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs-proprietario)" options={{ headerShown: false }} />
           <Stack.Screen name="avaliador" options={{ headerShown: false }} />
         </Stack>
         <StatusBar style="auto" />

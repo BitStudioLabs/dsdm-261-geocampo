@@ -9,7 +9,6 @@ import {
   NativeSyntheticEvent,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,86 +17,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import PropertyMap from '@/features/propriedades/components/PropertyMap';
+import { PAGE_SIZE_OPTIONS, THEME } from '@/features/propriedades/constants';
+import {
+  getStatusMeta as getPropertyStatusMeta,
+  isValidEmail as isValidOwnerEmail,
+  normalizeProperty as normalizePropertyRow,
+} from '@/features/propriedades/helpers';
+import { styles } from '@/features/propriedades/styles';
+import type { CoordinateKind, FilterValue, OwnerForm, PropertyRow, PropertyStatus, ProprietarioOption, RawPropertyRow } from '@/features/propriedades/types';
 import { supabase } from '@/src/lib/supabase';
-
-const THEME = {
-  bg: '#0a1f0d',
-  card: 'rgba(10,31,13,0.92)',
-  border: 'rgba(77,200,90,0.14)',
-  borderStrong: 'rgba(77,200,90,0.35)',
-  white: '#ffffff',
-  offWhite: '#f0f8f0',
-  muted: 'rgba(255,255,255,0.55)',
-  hint: 'rgba(255,255,255,0.28)',
-  green: '#4dc85a',
-  gold: '#f5c842',
-  blue: '#5b9cff',
-  red: '#ff6b6b',
-  amber: '#f59e0b',
-};
-
-type PropertyStatus = 'ativo' | 'inativo' | 'em_analise' | null;
-
-type PropertyRow = {
-  id: number;
-  nome: string | null;
-  municipio_nome: string | null;
-  uf: string | null;
-  bairro: string | null;
-  referencia: string | null;
-  como_chegar: string | null;
-  telefone: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  area_total: number | null;
-  car: string | null;
-  status_propriedade: PropertyStatus;
-  status_arrendamento: string | null;
-  produtores:
-    | {
-        nome: string | null;
-        telefone: string | null;
-        email: string | null;
-        cpf_cnpj: string | null;
-      }
-    | null;
-};
-
-type FilterValue = 'todos' | 'ativo' | 'em_analise' | 'inativo';
-
-type CoordinateKind = 'latitude' | 'longitude';
-
-type RawPropertyRow = Omit<PropertyRow, 'latitude' | 'longitude'> & {
-  latitude: number | string | null;
-  longitude: number | string | null;
-};
-
-type OwnerForm = {
-  nome: string;
-  email: string;
-  telefone: string;
-  cpfCnpj: string;
-  senha: string;
-};
-
-type ProprietarioOption = {
-  id: string;
-  nome_completo: string;
-  email: string;
-  telefone: string | null;
-};
-
-const STATUS_META: Record<Exclude<FilterValue, 'todos'>, { label: string; color: string; bg: string }> = {
-  ativo: { label: 'Ativa', color: THEME.green, bg: 'rgba(77,200,90,0.15)' },
-  em_analise: { label: 'Em analise', color: THEME.amber, bg: 'rgba(245,158,11,0.16)' },
-  inativo: { label: 'Inativa', color: THEME.red, bg: 'rgba(255,107,107,0.16)' },
-};
-
-const PAGE_SIZE_OPTIONS = [8, 16, 24];
-
-function getStatusMeta(status: PropertyStatus) {
-  return STATUS_META[status ?? 'ativo'] ?? STATUS_META.ativo;
-}
 
 function getArrangementLabel(value: string | null) {
   if (value === 'nao_arrendada') return 'Não arrendada';
@@ -336,7 +264,7 @@ export default function PropriedadesScreen() {
       throw error;
     }
 
-    const rows = ((data ?? []) as unknown as RawPropertyRow[]).map(normalizeProperty);
+    const rows = ((data ?? []) as unknown as RawPropertyRow[]).map(normalizePropertyRow);
 
     if (useInfiniteScroll && page > 1) {
       setProperties((current) => [...current, ...rows]);
@@ -375,7 +303,7 @@ export default function PropriedadesScreen() {
       throw error;
     }
 
-    setMapDataset(((data ?? []) as unknown as RawPropertyRow[]).map(normalizeProperty));
+    setMapDataset(((data ?? []) as unknown as RawPropertyRow[]).map(normalizePropertyRow));
   }, [filter, query]);
 
   useEffect(() => {
@@ -479,10 +407,10 @@ export default function PropriedadesScreen() {
     };
   }, [mapProperties, selectedProperty]);
 
-  const selectedStatus = getStatusMeta(selectedProperty?.status_propriedade ?? null);
+  const selectedStatus = getPropertyStatusMeta(selectedProperty?.status_propriedade ?? null);
   const selectedPropertyHasOwner = !!selectedProperty?.produtores?.nome;
 
-  useEffect(() => {
+  const resetOwnerState = useCallback(() => {
     setOwnerFormOpen(false);
     setOwnerExists(null);
     setOwnerSearch('');
@@ -490,7 +418,11 @@ export default function PropriedadesScreen() {
     setOwnerFeedback(null);
     setOwnerErrors({});
     setOwnerForm({ nome: '', email: '', telefone: '', cpfCnpj: '', senha: '' });
-  }, [selectedId]);
+  }, []);
+
+  useEffect(() => {
+    resetOwnerState();
+  }, [resetOwnerState, selectedId]);
 
   useEffect(() => {
     if (!ownerFormOpen) {
@@ -573,7 +505,7 @@ export default function PropriedadesScreen() {
     }
 
     ownerCheckTimer.current = setTimeout(async () => {
-      if (!isValidEmail(value)) {
+      if (!isValidOwnerEmail(value)) {
         setOwnerExists(null);
         return;
       }
@@ -604,7 +536,7 @@ export default function PropriedadesScreen() {
     if (!ownerForm.nome.trim()) {
       nextErrors.nome = 'Nome do proprietario e obrigatorio.';
     }
-    if (!isValidEmail(ownerForm.email)) {
+    if (!isValidOwnerEmail(ownerForm.email)) {
       nextErrors.email = 'Informe um e-mail valido.';
     }
     if (!ownerExists && !ownerForm.senha.trim()) {
@@ -725,7 +657,7 @@ export default function PropriedadesScreen() {
         throw propertyError;
       }
 
-      await loadProperties();
+      await Promise.all([loadProperties(), loadMapDataset()]);
       setSelectedId(selectedProperty.id);
       setOwnerFeedback({ type: 'ok', msg: 'Proprietario vinculado com sucesso a esta propriedade.' });
       setOwnerFormOpen(false);
@@ -854,16 +786,20 @@ export default function PropriedadesScreen() {
             <InfoRow icon="flag" label="Referencia" value={selectedProperty.referencia ?? 'Não informada'} />
             <InfoRow icon="route" label="Como chegar" value={selectedProperty.como_chegar ?? 'Não informado'} />
 
-            {!selectedPropertyHasOwner ? (
+            {selectedProperty ? (
               <View style={styles.ownerCtaCard}>
                 <View style={styles.ownerCtaHeader}>
                   <View style={styles.ownerCtaIcon}>
                     <FontAwesome6 name="user-plus" size={12} color={THEME.gold} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.ownerCtaTitle}>Esta propriedade ainda não tem proprietario rural</Text>
+                    <Text style={styles.ownerCtaTitle}>
+                      {selectedPropertyHasOwner ? 'Alterar proprietario rural' : 'Adicionar proprietario rural'}
+                    </Text>
                     <Text style={styles.ownerCtaText}>
-                      Voce pode vincular um proprietario ja cadastrado ou criar um novo login com perfil de proprietario.
+                      {selectedPropertyHasOwner
+                        ? 'Voce pode substituir o proprietario atual vinculando um usuario proprietario rural ja cadastrado ou criando um novo acesso.'
+                        : 'Voce pode vincular um proprietario ja cadastrado ou criar um novo login com perfil de proprietario.'}
                     </Text>
                   </View>
                 </View>
@@ -871,7 +807,9 @@ export default function PropriedadesScreen() {
                 {!ownerFormOpen ? (
                   <TouchableOpacity style={styles.ownerPrimaryButton} onPress={() => setOwnerFormOpen(true)} activeOpacity={0.85}>
                     <FontAwesome6 name="user-plus" size={12} color={THEME.bg} />
-                    <Text style={styles.ownerPrimaryButtonText}>Adicionar proprietario rural</Text>
+                    <Text style={styles.ownerPrimaryButtonText}>
+                      {selectedPropertyHasOwner ? 'Trocar proprietario rural' : 'Adicionar proprietario rural'}
+                    </Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.ownerForm}>
@@ -934,7 +872,7 @@ export default function PropriedadesScreen() {
                         />
                       </View>
                       {ownerErrors.email ? <Text style={styles.inlineErrorText}>{ownerErrors.email}</Text> : null}
-                      {ownerExists !== null && isValidEmail(ownerForm.email) ? (
+                      {ownerExists !== null && isValidOwnerEmail(ownerForm.email) ? (
                         <Text style={[styles.ownerEmailStatus, { color: ownerExists ? THEME.green : THEME.gold }]}>
                           {ownerExists ? 'Usuario existente: os dados serao atualizados.' : 'Novo usuario: sera criado um login proprietario.'}
                         </Text>
@@ -992,7 +930,7 @@ export default function PropriedadesScreen() {
                     ) : null}
 
                     <View style={styles.ownerActions}>
-                      <TouchableOpacity style={styles.ownerGhostButton} onPress={() => setOwnerFormOpen(false)} activeOpacity={0.85}>
+                      <TouchableOpacity style={styles.ownerGhostButton} onPress={resetOwnerState} activeOpacity={0.85}>
                         <Text style={styles.ownerGhostButtonText}>Cancelar</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.ownerPrimaryButton} onPress={handleAttachOwner} activeOpacity={0.85} disabled={savingOwner}>
@@ -1135,7 +1073,7 @@ export default function PropriedadesScreen() {
           {!isLoading &&
             filteredProperties.map((property) => {
               const selected = property.id === selectedProperty?.id;
-              const meta = getStatusMeta(property.status_propriedade);
+              const meta = getPropertyStatusMeta(property.status_propriedade);
 
               return (
                 <TouchableOpacity
@@ -1171,427 +1109,3 @@ export default function PropriedadesScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: THEME.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(10,31,13,0.95)',
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  addButton: {
-    backgroundColor: THEME.green,
-  },
-  title: { color: THEME.white, fontSize: 24, fontWeight: '800' },
-  subtitle: { color: THEME.muted, fontSize: 12, marginTop: 2 },
-  content: { padding: 16, gap: 16 },
-  heroCard: {
-    backgroundColor: THEME.card,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    padding: 14,
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    marginBottom: 12,
-  },
-  searchInput: { flex: 1, color: THEME.white, fontSize: 14, padding: 0 },
-  filterRow: { gap: 8, paddingBottom: 12 },
-  filterChip: {
-    borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  filterChipText: { color: THEME.muted, fontSize: 12, fontWeight: '700' },
-  filterChipTextActive: { color: THEME.white },
-  mapFrame: {
-    borderRadius: 18,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: THEME.border,
-    position: 'relative',
-  },
-  map: { width: '100%', height: 280 },
-  centerButton: {
-    position: 'absolute',
-    right: 12,
-    bottom: 12,
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: 'rgba(10,31,13,0.92)',
-    borderWidth: 1,
-    borderColor: THEME.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapFallback: {
-    minHeight: 220,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: 20,
-  },
-  mapFallbackTitle: { color: THEME.white, fontSize: 15, fontWeight: '700' },
-  mapFallbackText: { color: THEME.muted, fontSize: 13, lineHeight: 18, textAlign: 'center' },
-  detailsCard: {
-    backgroundColor: THEME.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    padding: 16,
-  },
-  detailsHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
-  detailsHeaderActions: { alignItems: 'flex-end', gap: 8 },
-  detailsTitle: { color: THEME.white, fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  detailsSubtitle: { color: THEME.muted, fontSize: 13 },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: THEME.gold,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  editButtonText: {
-    color: THEME.bg,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  statusBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  statusText: { fontSize: 11, fontWeight: '800' },
-  infoRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  infoIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  infoLabel: {
-    color: THEME.muted,
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 2,
-  },
-  infoValue: { color: THEME.offWhite, fontSize: 13, lineHeight: 18 },
-  listSection: { gap: 12 },
-  listTitle: { color: THEME.white, fontSize: 18, fontWeight: '700' },
-  paginationToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 6,
-  },
-  paginationMainInfo: {
-    flex: 1,
-    gap: 6,
-  },
-  paginationModeControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  modeButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  modeButtonActive: {
-    backgroundColor: 'rgba(77,200,90,0.18)',
-    borderColor: THEME.green,
-  },
-  modeButtonText: {
-    color: THEME.muted,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  modeButtonTextActive: {
-    color: THEME.white,
-  },
-  paginationText: { color: THEME.muted, fontSize: 12 },
-  pageSizeControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  pageSizeButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  pageSizeButtonActive: { backgroundColor: 'rgba(77,200,90,0.18)', borderColor: THEME.green },
-  pageSizeText: { color: THEME.muted, fontSize: 11, fontWeight: '800' },
-  pageSizeTextActive: { color: THEME.white },
-  pageNumberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 10,
-  },
-  pageNavButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  pageNavButtonDisabled: { opacity: 0.4 },
-  pageNavText: { color: THEME.white, fontSize: 11, fontWeight: '700' },
-  pageNavTextDisabled: { color: 'rgba(255,255,255,0.5)' },
-  pageNumberButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  pageNumberButtonActive: { backgroundColor: THEME.green, borderColor: THEME.green },
-  pageNumberText: { color: THEME.white, fontSize: 11, fontWeight: '700' },
-  pageNumberTextActive: { color: THEME.bg },
-  pageDots: { color: THEME.muted, fontSize: 11, paddingVertical: 6, paddingHorizontal: 8 },
-  centerBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28, gap: 10 },
-  centerText: { color: THEME.muted, fontSize: 13 },
-  emptyState: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-    backgroundColor: 'rgba(245,200,66,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(245,200,66,0.24)',
-    borderRadius: 16,
-    padding: 14,
-  },
-  emptyText: { color: THEME.offWhite, fontSize: 13, flex: 1 },
-  propertyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: THEME.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    padding: 14,
-  },
-  propertyCardActive: {
-    borderColor: THEME.borderStrong,
-    backgroundColor: 'rgba(10,36,15,0.98)',
-  },
-  propertyIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  propertyName: { color: THEME.white, fontSize: 14, fontWeight: '700', marginBottom: 3 },
-  propertyMeta: { color: THEME.muted, fontSize: 12, lineHeight: 17 },
-  ownerCtaCard: {
-    marginTop: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(245,200,66,0.24)',
-    backgroundColor: 'rgba(245,200,66,0.08)',
-    padding: 14,
-    gap: 14,
-  },
-  ownerCtaHeader: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-  },
-  ownerCtaIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(245,200,66,0.12)',
-  },
-  ownerCtaTitle: {
-    color: THEME.white,
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  ownerCtaText: {
-    color: THEME.offWhite,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  ownerForm: {
-    gap: 12,
-  },
-  inlineField: {
-    gap: 6,
-  },
-  inlineLabel: {
-    color: THEME.white,
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  inlineInputBox: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  inlineInput: {
-    color: THEME.white,
-    fontSize: 14,
-    padding: 0,
-  },
-  inlineInputError: {
-    borderColor: THEME.red,
-  },
-  inlineErrorText: {
-    color: THEME.red,
-    fontSize: 11,
-  },
-  ownerSearchText: {
-    color: THEME.muted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  ownerOptionsCard: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: THEME.border,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  ownerOptionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  ownerOptionIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(77,200,90,0.12)',
-  },
-  ownerOptionName: {
-    color: THEME.white,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  ownerOptionMeta: {
-    color: THEME.muted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  ownerEmailStatus: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  ownerFeedback: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  ownerFeedbackOk: {
-    backgroundColor: 'rgba(77,200,90,0.12)',
-    borderColor: 'rgba(77,200,90,0.28)',
-  },
-  ownerFeedbackErr: {
-    backgroundColor: 'rgba(255,107,107,0.12)',
-    borderColor: 'rgba(255,107,107,0.28)',
-  },
-  ownerFeedbackText: {
-    color: THEME.offWhite,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  ownerActions: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  ownerPrimaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: THEME.gold,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 44,
-    flex: 1,
-  },
-  ownerPrimaryButtonText: {
-    color: THEME.bg,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  ownerGhostButton: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ownerGhostButtonText: {
-    color: THEME.white,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-});

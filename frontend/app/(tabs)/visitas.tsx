@@ -1,10 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as ImagePicker from 'expo-image-picker';
 import {
-  ActivityIndicator,
-  Alert,
   Dimensions,
   RefreshControl,
   SafeAreaView,
@@ -16,7 +12,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -28,8 +23,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/src/lib/supabase';
+import { EmptyStateCard } from '@/features/instrutor/components/EmptyStateCard';
+import { FeedbackCard } from '@/features/instrutor/components/FeedbackCard';
+import { LoadingState } from '@/features/instrutor/components/LoadingState';
+import { SectionCard } from '@/features/instrutor/components/SectionCard';
+import { StatCard } from '@/features/instrutor/components/StatCard';
+import { useInstructorVisits } from '@/features/instrutor/hooks/useInstructorVisits';
+import type { VisitHistoryItem } from '@/features/instrutor/types/visitas';
+import { calculateDistanceInMeters } from '@/features/instrutor/utils/visitFormatting';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -37,87 +38,19 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const THEME = {
   skyTop: '#0a1f0d',
   skyMid: '#0f2e14',
+  page: '#06180a',
+  panel: '#0f2116',
+  panelStrong: '#102719',
+  panelSoft: '#132d1c',
   starColor: 'rgba(255,255,255,0.8)',
   leafLight: '#4dc85a',
   cornYellow: '#f5c842',
   cardBg: 'rgba(10,31,13,0.85)',
   cardBorder: 'rgba(77,200,90,0.2)',
   textGray: 'rgba(255,255,255,0.55)',
+  textSoft: 'rgba(240,247,241,0.72)',
   link: '#7de88a',
 };
-
-type PropertyOption = {
-  id: number;
-  nome: string;
-  meta: string;
-  latitude: number | null;
-  longitude: number | null;
-};
-
-type VisitHistoryItem = {
-  id: string;
-  propriedade: string;
-  data: string;
-  hora: string;
-  status: 'Concluída' | 'Enviada' | 'Em análise' | 'Aprovada' | 'Rejeitada';
-};
-
-type VisitStatusDb =
-  | 'pendente'
-  | 'em_andamento'
-  | 'finalizada'
-  | 'em_analise'
-  | 'aprovada'
-  | 'rejeitada'
-  | 'excluida'
-  | null;
-
-type AtribuicaoRow = {
-  id: number;
-  id_propriedade: number;
-};
-
-type VisitaRow = {
-  id: number;
-  id_propriedade: number | null;
-  criado_em?: string | null;
-  status_visita?: VisitStatusDb;
-};
-
-type PropertyLookup = Record<
-  number,
-  {
-    id: number;
-    nome: string | null;
-    municipio_nome: string | null;
-    uf: string | null;
-    latitude: number | null;
-    longitude: number | null;
-  }
->;
-
-type SelectedPhoto = {
-  uri: string;
-  fileName: string;
-  extension: string;
-  mimeType: string;
-  fileSizeLabel: string;
-  dimensions: string;
-  cameraModel: string;
-  latitude: string;
-  longitude: string;
-  altitude: string;
-  capturedAt: string;
-  latitudeValue: number | null;
-  longitudeValue: number | null;
-  altitudeValue: number | null;
-  capturedAtIso: string | null;
-  hasExif: boolean;
-  hasGps: boolean;
-  exifFieldCount: number;
-};
-
-const VISIT_EVIDENCE_BUCKET = 'evidencias-visitas';
 
 const STARS = Array.from({ length: 20 }, (_, i) => ({
   id: i,
@@ -218,401 +151,64 @@ function Firefly({ startX, startY, delay, size }: { startX: number; startY: numb
   return <Animated.View style={[glowStyle, { pointerEvents: 'none' }]} />;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return '--/--/----';
+function getHistoryStatusStyle(status: VisitHistoryItem['status']) {
+  switch (status) {
+    case 'Concluída':
+      return { bg: 'rgba(89,210,124,0.14)', text: THEME.leafLight };
+    default:
+      return { bg: 'rgba(103,184,255,0.14)', text: '#3d8fcb' };
   }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '--/--/----';
-  }
-
-  return parsed.toLocaleDateString('pt-BR');
-}
-
-function formatTime(value?: string | null) {
-  if (!value) {
-    return '--:--';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '--:--';
-  }
-
-  return parsed.toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatFileSize(bytes?: number | null) {
-  if (!bytes || bytes <= 0) {
-    return 'Tamanho não informado';
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function toDecimalCoordinate(value: unknown, ref?: string) {
-  if (typeof value === 'number') {
-    if (ref === 'S' || ref === 'W') {
-      return value * -1;
-    }
-
-    return value;
-  }
-
-  if (!Array.isArray(value) || value.length < 3) {
-    return null;
-  }
-
-  const [degrees, minutes, seconds] = value;
-
-  if (
-    typeof degrees !== 'number' ||
-    typeof minutes !== 'number' ||
-    typeof seconds !== 'number'
-  ) {
-    return null;
-  }
-
-  const signal = ref === 'S' || ref === 'W' ? -1 : 1;
-  return signal * (degrees + minutes / 60 + seconds / 3600);
-}
-
-function formatCoordinate(value: number | null, suffix = '') {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return 'Não disponível';
-  }
-
-  return `${value.toFixed(5)}${suffix}`;
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) {
-      return message;
-    }
-  }
-
-  return 'Erro desconhecido.';
-}
-
-function base64ToArrayBuffer(base64: string) {
-  const binaryString = globalThis.atob(base64);
-  const length = binaryString.length;
-  const bytes = new Uint8Array(length);
-
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  return bytes.buffer;
-}
-
-function parseExifDate(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
-  const parsed = new Date(normalized);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return parsed.toISOString();
-}
-
-function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): SelectedPhoto {
-  const exif = (asset.exif ?? {}) as Record<string, unknown>;
-  const exifFieldCount = Object.keys(exif).length;
-  const parsedLatitude = typeof exif.latitude === 'number' ? exif.latitude : null;
-  const parsedLongitude = typeof exif.longitude === 'number' ? exif.longitude : null;
-  const latitude =
-    parsedLatitude ??
-    toDecimalCoordinate(exif.GPSLatitude, typeof exif.GPSLatitudeRef === 'string' ? exif.GPSLatitudeRef : undefined) ??
-    null;
-  const longitude =
-    parsedLongitude ??
-    toDecimalCoordinate(
-      exif.GPSLongitude,
-      typeof exif.GPSLongitudeRef === 'string' ? exif.GPSLongitudeRef : undefined
-    ) ?? null;
-  const altitude =
-    typeof exif.altitude === 'number'
-      ? `${Math.round(exif.altitude)}m`
-      : typeof exif.GPSAltitude === 'number'
-      ? `${Math.round(exif.GPSAltitude)}m`
-      : 'Não disponível';
-  const rawDate =
-    (typeof exif.DateTimeOriginal === 'string' && exif.DateTimeOriginal) ||
-    (typeof exif.DateTimeDigitized === 'string' && exif.DateTimeDigitized) ||
-    (typeof exif.CreateDate === 'string' && exif.CreateDate) ||
-    null;
-  const extension = asset.fileName?.split('.').pop()?.toLowerCase() || asset.mimeType?.split('/').pop() || 'jpg';
-  const altitudeValue =
-    typeof exif.altitude === 'number' ? exif.altitude : typeof exif.GPSAltitude === 'number' ? exif.GPSAltitude : null;
-  const cameraModel =
-    (typeof exif.Model === 'string' && exif.Model) ||
-    (typeof exif.model === 'string' && exif.model) ||
-    (typeof exif.make === 'string' && exif.make) ||
-    'Não identificado';
-
-  const capturedAt = rawDate
-    ? rawDate.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$3/$2/$1').replace(' ', ' - ')
-    : 'Não disponível';
-
-  return {
-    uri: asset.uri,
-    fileName: asset.fileName || 'foto-visita',
-    extension,
-    mimeType: asset.mimeType || 'image/jpeg',
-    fileSizeLabel: formatFileSize(asset.fileSize),
-    dimensions: `${asset.width} x ${asset.height}`,
-    cameraModel,
-    latitude: formatCoordinate(latitude),
-    longitude: formatCoordinate(longitude),
-    altitude,
-    capturedAt,
-    latitudeValue: latitude,
-    longitudeValue: longitude,
-    altitudeValue,
-    capturedAtIso: parseExifDate(rawDate),
-    hasExif: exifFieldCount > 0,
-    hasGps: latitude != null && longitude != null,
-    exifFieldCount,
-  };
-}
-
-function mapVisitStatusToHistoryLabel(status?: VisitStatusDb): VisitHistoryItem['status'] {
-  if (status === 'aprovada') {
-    return 'Aprovada';
-  }
-
-  if (status === 'rejeitada') {
-    return 'Rejeitada';
-  }
-
-  if (status === 'em_analise') {
-    return 'Em análise';
-  }
-
-  if (status === 'finalizada') {
-    return 'Concluída';
-  }
-
-  return 'Enviada';
-}
-
-function calculateDistanceInMeters(
-  originLat: number,
-  originLon: number,
-  targetLat: number,
-  targetLon: number
-) {
-  const earthRadius = 6371000;
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const deltaLat = toRadians(targetLat - originLat);
-  const deltaLon = toRadians(targetLon - originLon);
-  const lat1 = toRadians(originLat);
-  const lat2 = toRadians(targetLat);
-
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return Math.round(earthRadius * c);
 }
 
 export default function VisitasScreen() {
-  const { profile, user } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmittingVisit, setIsSubmittingVisit] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [properties, setProperties] = useState<PropertyOption[]>([]);
-  const [history, setHistory] = useState<VisitHistoryItem[]>([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
-
-  const loadVisitasData = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      setProperties([]);
-      setHistory([]);
-      setSelectedPropertyId(null);
-      setIsLoading(false);
-      return;
-    }
-
-    setErrorMessage('');
-
-    const [atribuicoesRes, visitasRes] = await Promise.all([
-      supabase
-        .from('atribuicoes')
-        .select('id, id_propriedade')
-        .eq('id_instrutor', currentUserId)
-        .eq('ativa', true)
-        .order('atualizado_em', { ascending: false }),
-      supabase
-        .from('visitas')
-        .select('id, id_propriedade, criado_em, status_visita')
-        .eq('id_instrutor', currentUserId)
-        .order('criado_em', { ascending: false })
-        .limit(20),
-    ]);
-
-    if (atribuicoesRes.error) {
-      throw atribuicoesRes.error;
-    }
-
-    if (visitasRes.error) {
-      throw visitasRes.error;
-    }
-
-    const atribuicoes = (atribuicoesRes.data ?? []) as AtribuicaoRow[];
-    const visitas = (visitasRes.data ?? []) as VisitaRow[];
-    const latestVisitByProperty = visitas.reduce<Record<number, VisitaRow>>((acc, visit) => {
-      if (visit.id_propriedade == null) {
-        return acc;
-      }
-
-      if (!acc[visit.id_propriedade]) {
-        acc[visit.id_propriedade] = visit;
-      }
-
-      return acc;
-    }, {});
-    const propertyIds = Array.from(
-      new Set(
-        [...atribuicoes.map((item) => item.id_propriedade), ...visitas.map((item) => item.id_propriedade)].filter(
-          (value): value is number => typeof value === 'number'
-        )
-      )
-    );
-
-    let propertyLookup: PropertyLookup = {};
-
-    if (propertyIds.length > 0) {
-      const { data: propertiesData, error: propertiesError } = await supabase
-        .from('propriedades')
-        .select('id, nome, municipio_nome, uf, latitude, longitude')
-        .in('id', propertyIds)
-        .order('nome', { ascending: true });
-
-      if (propertiesError) {
-        throw propertiesError;
-      }
-
-      propertyLookup = (propertiesData ?? []).reduce<PropertyLookup>((acc, property) => {
-        acc[property.id] = property;
-        return acc;
-      }, {});
-    }
-
-    const nextProperties = atribuicoes
-      .filter((item) => !latestVisitByProperty[item.id_propriedade])
-      .map((item) => {
-        const property = propertyLookup[item.id_propriedade];
-
-        return {
-          id: item.id_propriedade,
-          nome: property?.nome ?? 'Propriedade sem nome',
-          meta:
-            [property?.municipio_nome, property?.uf].filter(Boolean).join(', ') ||
-            'Localização não informada',
-          latitude: property?.latitude ?? null,
-          longitude: property?.longitude ?? null,
-        };
-      });
-
-    const nextHistory = visitas.map((item, index) => {
-      const property = item.id_propriedade ? propertyLookup[item.id_propriedade] ?? null : null;
-
-      return {
-        id: String(item.id),
-        propriedade: property?.nome ?? `Visita ${index + 1}`,
-        data: formatDate(item.criado_em),
-        hora: formatTime(item.criado_em),
-        status: mapVisitStatusToHistoryLabel(item.status_visita),
-      } as VisitHistoryItem;
-    });
-
-    setProperties(nextProperties);
-    setHistory(nextHistory);
-    setSelectedPropertyId((current) => current ?? nextProperties[0]?.id ?? null);
-  }, [profile?.id, user?.id]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function run() {
-      setIsLoading(true);
-      try {
-        await loadVisitasData();
-      } catch (error) {
-        console.error('Erro ao carregar tela de visitas:', error);
-        if (mounted) {
-          setErrorMessage('Não foi possível carregar suas visitas agora.');
-          setProperties([]);
-          setHistory([]);
-          setSelectedPropertyId(null);
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    run();
-
-    return () => {
-      mounted = false;
-    };
-  }, [loadVisitasData]);
-
-  const selectedProperty = useMemo(
-    () => properties.find((item) => item.id === selectedPropertyId) ?? properties[0] ?? null,
-    [properties, selectedPropertyId]
-  );
+  const {
+    errorMessage,
+    handleClearSelectedPhoto,
+    handleCreateVisit,
+    handlePickImage,
+    handleRefresh,
+    history,
+    isLoading,
+    isOfflineMode,
+    isSubmittingVisit,
+    isSyncingQueue,
+    handleSyncNow,
+    properties,
+    queuedVisitsCount,
+    refreshing,
+    selectedPhoto,
+    selectedProperty,
+    selectedPropertyId,
+    setSelectedPropertyId,
+  } = useInstructorVisits();
 
   const metadataItems = useMemo(
-    () => {
-      if (!selectedPhoto) {
-        return [];
-      }
-
-      return [
-        {
-          label: 'Latitude',
-          value: selectedPhoto.latitudeValue != null ? selectedPhoto.latitude : 'Sem GPS na foto',
-        },
-        {
-          label: 'Longitude',
-          value: selectedPhoto.longitudeValue != null ? selectedPhoto.longitude : 'Sem GPS na foto',
-        },
-        {
-          label: 'Altitude',
-          value: selectedPhoto.altitudeValue != null ? selectedPhoto.altitude : 'Sem altitude no EXIF',
-        },
-      ];
-    },
+    () => [
+      {
+        label: 'Latitude',
+        value: !selectedPhoto
+          ? 'Aguardando foto'
+          : selectedPhoto.latitudeValue != null
+            ? selectedPhoto.latitude
+            : 'Sem GPS na foto',
+      },
+      {
+        label: 'Longitude',
+        value: !selectedPhoto
+          ? 'Aguardando foto'
+          : selectedPhoto.longitudeValue != null
+            ? selectedPhoto.longitude
+            : 'Sem GPS na foto',
+      },
+      {
+        label: 'Altitude',
+        value: !selectedPhoto
+          ? 'Aguardando foto'
+          : selectedPhoto.altitudeValue != null
+            ? selectedPhoto.altitude
+            : 'Sem altitude no EXIF',
+      },
+    ],
     [selectedPhoto]
   );
 
@@ -691,134 +287,9 @@ export default function VisitasScreen() {
     return `Foto registrada a ${(distance / 1000).toFixed(2)} km da propriedade.`;
   }, [selectedPhoto, selectedProperty]);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await loadVisitasData();
-    } catch (error) {
-      console.error('Erro ao atualizar tela de visitas:', error);
-      setErrorMessage('Não foi possível atualizar suas visitas agora.');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const handlePickImage = useCallback(async () => {
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert('Permissão necessária', 'Autorize o acesso à galeria para selecionar a foto da visita.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 1,
-        exif: true,
-      });
-
-      if (result.canceled || !result.assets?.length) {
-        return;
-      }
-
-      setSelectedPhoto(buildSelectedPhoto(result.assets[0]));
-    } catch (error) {
-      console.error('Erro ao selecionar foto da visita:', error);
-      Alert.alert('Erro ao selecionar foto', 'Não foi possível abrir sua galeria agora.');
-    }
-  }, []);
-
-  const handleClearSelectedPhoto = useCallback(() => {
-    setSelectedPhoto(null);
-  }, []);
-
-  const handleCreateVisit = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId || !selectedProperty) {
-      Alert.alert('Visita indisponível', 'Selecione uma propriedade antes de continuar.');
-      return;
-    }
-
-    if (!selectedPhoto) {
-      Alert.alert('Foto obrigatória', 'Selecione a foto da visita antes de enviar para análise.');
-      return;
-    }
-
-    try {
-      setIsSubmittingVisit(true);
-      setErrorMessage('');
-
-      const { data, error } = await supabase
-        .from('visitas')
-        .insert({
-          id_instrutor: currentUserId,
-          id_propriedade: selectedProperty.id,
-          criado_em: new Date().toISOString(),
-          status_visita: 'pendente',
-        })
-        .select('id')
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      const visitId = data?.id;
-
-      if (visitId) {
-        const base64File = await FileSystem.readAsStringAsync(selectedPhoto.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const fileBuffer = base64ToArrayBuffer(base64File);
-        const filePath = `${currentUserId}/${visitId}/evidencia-${Date.now()}.${selectedPhoto.extension}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from(VISIT_EVIDENCE_BUCKET)
-          .upload(filePath, fileBuffer, {
-            upsert: true,
-            contentType: selectedPhoto.mimeType,
-          });
-
-        if (uploadError) {
-          throw uploadError;
-        }
-
-        const publicUrl = supabase.storage.from(VISIT_EVIDENCE_BUCKET).getPublicUrl(filePath).data.publicUrl;
-        const { error: updateError } = await supabase
-          .from('visitas')
-          .update({
-            foto_url: publicUrl,
-            foto_path: filePath,
-            latitude: selectedPhoto.latitudeValue,
-            longitude: selectedPhoto.longitudeValue,
-            altitude: selectedPhoto.altitudeValue,
-            capturado_em: selectedPhoto.capturedAtIso,
-            status_visita: 'em_andamento',
-            atualizado_em: new Date().toISOString(),
-          })
-          .eq('id', visitId);
-
-        if (updateError) {
-          console.warn('Visita salva, mas não foi possível gravar a referência da foto:', updateError);
-        }
-      }
-
-      await loadVisitasData();
-      setSelectedPhoto(null);
-      router.push({
-        pathname: '/avaliador',
-        params: data?.id ? { visitId: String(data.id), propertyId: String(selectedProperty.id) } : undefined,
-      } as any);
-    } catch (error) {
-      console.error('Erro ao registrar visita do instrutor:', error);
-      Alert.alert('Erro ao registrar', getErrorMessage(error));
-    } finally {
-      setIsSubmittingVisit(false);
-    }
-  }, [loadVisitasData, profile?.id, selectedPhoto, selectedProperty, user?.id]);
+  const pendingPropertiesCount = properties.length;
+  const completedVisitsCount = history.length;
+  const uploadStatusLabel = selectedPhoto ? 'Foto pronta para envio' : 'Aguardando evidência';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -862,26 +333,93 @@ export default function VisitasScreen() {
               <Ionicons name="ellipsis-horizontal" size={18} color={THEME.link} />
             </TouchableOpacity>
           </View>
+
+          <View style={styles.heroStatsRow}>
+            <StatCard
+              icon="business-outline"
+              iconColor={THEME.leafLight}
+              value={pendingPropertiesCount}
+              label="Disponíveis"
+              containerStyle={styles.heroStatCard}
+              iconWrapStyle={styles.heroStatIcon}
+              valueStyle={styles.heroStatValue}
+              labelStyle={styles.heroStatLabel}
+            />
+
+            <StatCard
+              icon="images-outline"
+              iconColor={THEME.cornYellow}
+              value={selectedPhoto ? '1' : '0'}
+              label="Foto pronta"
+              containerStyle={styles.heroStatCard}
+              iconWrapStyle={styles.heroStatIcon}
+              valueStyle={styles.heroStatValue}
+              labelStyle={styles.heroStatLabel}
+            />
+
+            <StatCard
+              icon="checkmark-done-outline"
+              iconColor={THEME.link}
+              value={completedVisitsCount}
+              label="Realizadas"
+              containerStyle={styles.heroStatCard}
+              iconWrapStyle={styles.heroStatIcon}
+              valueStyle={styles.heroStatValue}
+              labelStyle={styles.heroStatLabel}
+            />
+          </View>
         </View>
 
         {errorMessage ? (
-          <View style={styles.feedbackCard}>
-            <Ionicons name="alert-circle-outline" size={18} color={THEME.cornYellow} />
-            <Text style={styles.feedbackText}>{errorMessage}</Text>
+          <FeedbackCard
+            text={errorMessage}
+            icon={isOfflineMode ? 'cloud-offline-outline' : 'alert-circle-outline'}
+            iconColor={THEME.cornYellow}
+            containerStyle={[styles.feedbackCard, isOfflineMode && styles.feedbackCardOffline]}
+            textStyle={styles.feedbackText}
+          />
+        ) : null}
+
+        {queuedVisitsCount > 0 ? (
+          <View style={styles.syncCard}>
+            <View style={styles.syncCardCopy}>
+              <View style={styles.syncBadge}>
+                <Ionicons name="cloud-offline-outline" size={14} color={THEME.cornYellow} />
+                <Text style={styles.syncBadgeText}>
+                  {queuedVisitsCount} pendente{queuedVisitsCount > 1 ? 's' : ''}
+                </Text>
+              </View>
+              <Text style={styles.syncTitle}>Visitas salvas no aparelho</Text>
+              <Text style={styles.syncText}>
+                Mesmo sem internet, você pode continuar registrando visitas. Quando a conexão voltar, sincronize daqui.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.92}
+              style={[styles.syncButton, isSyncingQueue && styles.syncButtonDisabled]}
+              onPress={handleSyncNow}
+              disabled={isSyncingQueue}>
+              <Text style={styles.syncButtonText}>
+                {isSyncingQueue ? 'Sincronizando...' : 'Sincronizar agora'}
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>NOVA EVIDENCIA</Text>
+        <SectionCard containerStyle={styles.section} title="NOVA EVIDÊNCIA" titleStyle={styles.sectionTitle}>
           <Text style={styles.helperText}>
             Escolha a propriedade para vincular a foto da visita realizada.
           </Text>
 
           {isLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={THEME.leafLight} size="large" />
-              <Text style={styles.loadingText}>Carregando propriedades atribuídas...</Text>
-            </View>
+            <LoadingState
+              color={THEME.leafLight}
+              size="large"
+              text="Carregando propriedades atribuídas..."
+              containerStyle={styles.loadingWrap}
+              textStyle={styles.loadingText}
+            />
           ) : selectedProperty ? (
             <View style={styles.selectionCard}>
               <View style={styles.selectionTop}>
@@ -892,6 +430,9 @@ export default function VisitasScreen() {
                   <Text style={styles.selectionLabel}>Propriedade selecionada</Text>
                   <Text style={styles.selectionTitle}>{selectedProperty.nome}</Text>
                   <Text style={styles.selectionMeta}>{selectedProperty.meta}</Text>
+                </View>
+                <View style={styles.selectionBadge}>
+                  <Text style={styles.selectionBadgeText}>Ativa</Text>
                 </View>
               </View>
 
@@ -914,18 +455,30 @@ export default function VisitasScreen() {
               </View>
             </View>
           ) : (
-            <View style={styles.emptyBox}>
-              <Ionicons name="business-outline" size={26} color={THEME.textGray} />
-              <Text style={styles.emptyTitle}>Nenhuma propriedade atribuida</Text>
-              <Text style={styles.emptyText}>
-                Quando uma fazenda for vinculada ao seu usuário, ela aparecerá aqui para envio de evidências.
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon="business-outline"
+              iconColor={THEME.textGray}
+              title="Nenhuma propriedade atribuída"
+              description="Quando uma fazenda for vinculada ao seu usuário, ela aparecerá aqui para envio de evidências."
+              containerStyle={styles.emptyBox}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyText}
+              showIconWrap={false}
+            />
           )}
-        </View>
+        </SectionCard>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>UPLOAD DE FOTO</Text>
+        <SectionCard containerStyle={styles.section} title="UPLOAD DE FOTO" titleStyle={styles.sectionTitle}>
+          <View style={styles.uploadStatusRow}>
+            <View style={styles.uploadStatusBadge}>
+              <Ionicons
+                name={selectedPhoto ? 'checkmark-circle-outline' : 'time-outline'}
+                size={15}
+                color={selectedPhoto ? THEME.leafLight : THEME.cornYellow}
+              />
+              <Text style={styles.uploadStatusText}>{uploadStatusLabel}</Text>
+            </View>
+          </View>
           <View style={styles.uploadCard}>
             {selectedPhoto ? (
               <>
@@ -963,7 +516,7 @@ export default function VisitasScreen() {
                 </View>
                 <Text style={styles.uploadTitle}>Selecionar Foto</Text>
                 <Text style={styles.uploadSubtitle}>
-                  JPEG, PNG, HEIC - metadados GPS serão lidos automaticamente
+                  JPEG, PNG, HEIC. Se houver GPS e EXIF, eles serão lidos automaticamente.
                 </Text>
                 <TouchableOpacity activeOpacity={0.9} style={styles.uploadButton} onPress={handlePickImage}>
                   <Text style={styles.uploadButtonText}>Escolher Arquivo</Text>
@@ -971,12 +524,12 @@ export default function VisitasScreen() {
               </>
             )}
           </View>
-        </View>
+        </SectionCard>
 
-        <View style={styles.section}>
+        <SectionCard containerStyle={styles.section}>
           <View style={styles.geoHeader}>
             <View>
-              <Text style={styles.geoTitle}>Geolocalização Extraída</Text>
+              <Text style={styles.geoTitle}>Localização extraída</Text>
               <Text style={styles.geoSubtitle}>
                 Metadados da foto selecionada para {selectedProperty?.nome ?? 'a propriedade escolhida'}
               </Text>
@@ -994,21 +547,19 @@ export default function VisitasScreen() {
                 color={THEME.leafLight}
               />
               <Text style={styles.geoBadgeText}>
-                {!selectedPhoto ? 'Aguardando foto' : selectedPhoto.hasGps ? 'GPS detectado' : 'Sem GPS'}
+                {!selectedPhoto ? 'Aguardando foto' : selectedPhoto.hasGps ? selectedPhoto.locationSourceLabel : 'Sem GPS'}
               </Text>
             </View>
           </View>
 
-          {metadataItems.length > 0 ? (
-            <View style={styles.metadataRow}>
-              {metadataItems.map((item) => (
-                <View key={item.label} style={styles.metadataCard}>
-                  <Text style={styles.metadataLabel}>{item.label}</Text>
-                  <Text style={styles.metadataValue}>{item.value}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
+          <View style={styles.metadataRow}>
+            {metadataItems.map((item) => (
+              <View key={item.label} style={styles.metadataCard}>
+                <Text style={styles.metadataLabel}>{item.label}</Text>
+                <Text style={styles.metadataValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
           <View style={styles.metadataAlertCard}>
             <Ionicons name={metadataAlert.icon} size={18} color={THEME.skyMid} />
@@ -1028,7 +579,7 @@ export default function VisitasScreen() {
             <View style={styles.comparisonRow}>
               <Ionicons name="location-outline" size={16} color={THEME.skyMid} />
               <View style={styles.comparisonCopy}>
-                <Text style={styles.comparisonLabel}>Coordenadas da propriedade</Text>
+                <Text style={styles.comparisonLabel}>Validação da foto</Text>
                 <Text style={styles.comparisonValue}>{propertyCoordinatesLabel}</Text>
               </View>
             </View>
@@ -1061,28 +612,32 @@ export default function VisitasScreen() {
             onPress={handleCreateVisit}
             disabled={!selectedProperty || !selectedPhoto || isSubmittingVisit}>
             <Text style={styles.primaryButtonText}>
-              {isSubmittingVisit ? 'Salvando visita...' : 'Enviar para Análise'}
+              {isSubmittingVisit ? 'Salvando visita...' : 'Enviar para análise'}
             </Text>
             <Ionicons name="arrow-forward" size={18} color="#fff" />
           </TouchableOpacity>
-        </View>
+        </SectionCard>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>VISITAS REALIZADAS</Text>
+        <SectionCard containerStyle={styles.section} title="VISITAS REALIZADAS" titleStyle={styles.sectionTitle}>
 
           {isLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={THEME.leafLight} size="small" />
-              <Text style={styles.loadingText}>Carregando histórico...</Text>
-            </View>
+            <LoadingState
+              color={THEME.leafLight}
+              text="Carregando histórico..."
+              containerStyle={styles.loadingWrap}
+              textStyle={styles.loadingText}
+            />
           ) : history.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="clipboard-outline" size={26} color={THEME.textGray} />
-              <Text style={styles.emptyTitle}>Nenhuma visita registrada</Text>
-              <Text style={styles.emptyText}>
-                Assim que você concluir visitas, elas vão aparecer aqui.
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon="clipboard-outline"
+              iconColor={THEME.textGray}
+              title="Nenhuma visita registrada"
+              description="Assim que você concluir visitas, elas vão aparecer aqui."
+              containerStyle={styles.emptyBox}
+              titleStyle={styles.emptyTitle}
+              descriptionStyle={styles.emptyText}
+              showIconWrap={false}
+            />
           ) : (
             history.map((item) => (
               <View key={item.id} style={styles.historyRow}>
@@ -1095,20 +650,22 @@ export default function VisitasScreen() {
                     {item.data} - {item.hora}
                   </Text>
                 </View>
-                <View style={styles.historyBadge}>
-                  <Text style={styles.historyBadgeText}>{item.status}</Text>
+                <View style={[styles.historyBadge, { backgroundColor: getHistoryStatusStyle(item.status).bg }]}>
+                  <Text style={[styles.historyBadgeText, { color: getHistoryStatusStyle(item.status).text }]}>
+                    {item.status}
+                  </Text>
                 </View>
               </View>
             ))
           )}
-        </View>
+        </SectionCard>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: THEME.page },
   content: { paddingBottom: 110 },
   heroSection: {
     paddingHorizontal: 18,
@@ -1164,7 +721,42 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
-  subtitle: { color: THEME.link, fontSize: 13, lineHeight: 18 },
+  subtitle: { color: THEME.textSoft, fontSize: 13, lineHeight: 18, maxWidth: 270 },
+  heroStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+    zIndex: 10,
+  },
+  heroStatCard: {
+    flex: 1,
+    backgroundColor: THEME.cardBg,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: THEME.cardBorder,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  heroStatIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(77,200,90,0.12)',
+    marginBottom: 12,
+  },
+  heroStatValue: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  heroStatLabel: {
+    color: THEME.textSoft,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   moreButton: {
     width: 34,
     height: 34,
@@ -1176,18 +768,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   section: {
-    backgroundColor: colors.card,
-    borderRadius: 22,
-    padding: 16,
+    backgroundColor: THEME.panel,
+    borderRadius: 24,
+    padding: 18,
     marginBottom: 14,
     marginHorizontal: 18,
-    shadowColor: '#0B1E17',
+    shadowColor: '#08130b',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 18,
-    elevation: 2,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.1)',
+    borderColor: 'rgba(77,200,90,0.14)',
   },
   feedbackCard: {
     flexDirection: 'row',
@@ -1198,28 +790,87 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 14,
     marginHorizontal: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.18)',
   },
   feedbackText: {
     flex: 1,
-    color: '#7B6333',
+    color: '#f2dfaa',
     fontSize: 13,
     lineHeight: 18,
   },
+  feedbackCardOffline: {
+    backgroundColor: 'rgba(242,201,76,0.1)',
+  },
+  syncCard: {
+    marginHorizontal: 18,
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(242,201,76,0.18)',
+    backgroundColor: 'rgba(242,201,76,0.08)',
+    padding: 14,
+    gap: 12,
+  },
+  syncCardCopy: {
+    gap: 8,
+  },
+  syncBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(242,201,76,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  syncBadgeText: {
+    color: THEME.cornYellow,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  syncTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  syncText: {
+    color: THEME.textSoft,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  syncButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: THEME.cornYellow,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  syncButtonDisabled: {
+    opacity: 0.55,
+  },
+  syncButtonText: {
+    color: THEME.skyTop,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
   sectionTitle: {
-    color: THEME.skyMid,
+    color: THEME.link,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
     marginBottom: 10,
   },
-  helperText: { color: colors.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 },
+  helperText: { color: THEME.textSoft, fontSize: 13, lineHeight: 18, marginBottom: 14 },
   loadingWrap: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 26,
   },
   loadingText: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 13,
     marginTop: 10,
     textAlign: 'center',
@@ -1229,26 +880,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 26,
     paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: THEME.panelSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.12)',
   },
   emptyTitle: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 15,
     fontWeight: '700',
     marginTop: 10,
     marginBottom: 4,
   },
   emptyText: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
   },
   selectionCard: {
-    backgroundColor: 'rgba(77,200,90,0.06)',
-    borderRadius: 18,
-    padding: 14,
+    backgroundColor: THEME.panelSoft,
+    borderRadius: 22,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: 'rgba(77,200,90,0.18)',
   },
   selectionTop: { flexDirection: 'row', marginBottom: 14 },
   selectionIcon: {
@@ -1261,34 +916,68 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   selectionCopy: { flex: 1 },
+  selectionBadge: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(77,200,90,0.14)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.2)',
+  },
+  selectionBadgeText: {
+    color: THEME.leafLight,
+    fontSize: 11,
+    fontWeight: '800',
+  },
   selectionLabel: { color: THEME.skyMid, fontSize: 11, marginBottom: 4 },
   selectionTitle: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 20,
     fontWeight: '800',
     marginBottom: 2,
   },
-  selectionMeta: { color: colors.textMuted, fontSize: 12 },
+  selectionMeta: { color: THEME.textSoft, fontSize: 12 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   propertyChip: {
     borderRadius: 999,
-    backgroundColor: 'rgba(77,200,90,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: 'rgba(77,200,90,0.12)',
   },
   propertyChipActive: { backgroundColor: THEME.skyMid, borderColor: THEME.skyMid },
-  propertyChipText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  propertyChipText: { color: THEME.textSoft, fontSize: 12, fontWeight: '700' },
   propertyChipTextActive: { color: '#fff' },
   uploadCard: {
     borderWidth: 2,
     borderColor: THEME.leafLight,
     borderStyle: 'dashed',
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
     alignItems: 'center',
-    backgroundColor: 'rgba(77,200,90,0.06)',
+    backgroundColor: THEME.panelSoft,
+  },
+  uploadStatusRow: {
+    marginBottom: 12,
+  },
+  uploadStatusBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(77,200,90,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.14)',
+  },
+  uploadStatusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   photoPreview: {
     width: '100%',
@@ -1308,9 +997,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(245,200,66,0.25)',
   },
-  uploadTitle: { color: colors.textDark, fontSize: 24, fontWeight: '800', marginBottom: 6 },
+  uploadTitle: { color: '#fff', fontSize: 24, fontWeight: '800', marginBottom: 6 },
   uploadSubtitle: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
@@ -1339,7 +1028,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.16)',
   },
   photoInfoText: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1356,14 +1045,14 @@ const styles = StyleSheet.create({
   uploadButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   cancelPhotoButton: {
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: 'rgba(15,46,20,0.12)',
+    borderColor: 'rgba(77,200,90,0.18)',
   },
   cancelPhotoButtonText: {
-    color: THEME.skyMid,
+    color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1373,8 +1062,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 14,
   },
-  geoTitle: { color: colors.textDark, fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  geoSubtitle: { color: colors.textMuted, fontSize: 12, maxWidth: 220 },
+  geoTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  geoSubtitle: { color: THEME.textSoft, fontSize: 12, maxWidth: 220 },
   geoBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1387,17 +1076,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(77,200,90,0.2)',
   },
   geoBadgeText: { color: THEME.leafLight, fontSize: 12, fontWeight: '700' },
-  metadataRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  metadataRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   metadataCard: {
-    flex: 1,
-    backgroundColor: 'rgba(77,200,90,0.08)',
+    minWidth: '31%',
+    flexGrow: 1,
+    backgroundColor: THEME.panelSoft,
     borderRadius: 14,
     padding: 10,
     borderWidth: 1,
     borderColor: 'rgba(77,200,90,0.12)',
   },
   metadataLabel: { color: THEME.skyMid, fontSize: 11, marginBottom: 4 },
-  metadataValue: { color: colors.textDark, fontSize: 18, fontWeight: '800' },
+  metadataValue: { color: '#fff', fontSize: 16, lineHeight: 20, fontWeight: '800' },
   metadataAlertCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1411,7 +1101,7 @@ const styles = StyleSheet.create({
   },
   metadataAlertText: {
     flex: 1,
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '600',
@@ -1424,7 +1114,7 @@ const styles = StyleSheet.create({
   },
   metadataDetailCard: {
     width: '48.8%',
-    backgroundColor: 'rgba(77,200,90,0.08)',
+    backgroundColor: THEME.panelSoft,
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
@@ -1436,13 +1126,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metadataDetailValue: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '700',
   },
   comparisonCard: {
-    backgroundColor: 'rgba(77,200,90,0.08)',
+    backgroundColor: THEME.panelSoft,
     borderRadius: 16,
     padding: 14,
     marginBottom: 16,
@@ -1464,7 +1154,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   comparisonValue: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '600',
@@ -1497,9 +1187,13 @@ const styles = StyleSheet.create({
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(77,200,90,0.15)',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(77,200,90,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,200,90,0.1)',
+    marginBottom: 10,
   },
   historyIcon: {
     width: 42,
@@ -1511,15 +1205,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   historyCopy: { flex: 1 },
-  historyTitle: { color: colors.textDark, fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  historyMeta: { color: colors.textMuted, fontSize: 12 },
+  historyTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  historyMeta: { color: THEME.textSoft, fontSize: 12 },
   historyBadge: {
     borderRadius: 999,
-    backgroundColor: 'rgba(77,200,90,0.12)',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.18)',
   },
-  historyBadgeText: { color: THEME.leafLight, fontSize: 12, fontWeight: '700' },
+  historyBadgeText: { fontSize: 12, fontWeight: '700' },
 });

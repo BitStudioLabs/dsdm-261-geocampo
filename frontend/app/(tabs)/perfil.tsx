@@ -1,10 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect } from 'react';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as ImagePicker from 'expo-image-picker';
 import {
-  Alert,
   Dimensions,
   Modal,
   RefreshControl,
@@ -18,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import Animated, {
   Easing,
   interpolate,
@@ -30,51 +25,26 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/src/lib/supabase';
+import { SectionCard } from '@/features/instrutor/components/SectionCard';
+import { useInstructorProfile } from '@/features/instrutor/hooks/useInstructorProfile';
 import { colors } from '@/src/theme/colors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
 const THEME = {
-  skyTop: '#0a1f0d',
-  starColor: 'rgba(255,255,255,0.8)',
-  leafLight: '#4dc85a',
-  cornYellow: '#f5c842',
-  cardBg: 'rgba(10,31,13,0.85)',
-  cardBorder: 'rgba(77,200,90,0.2)',
-  textGray: 'rgba(255,255,255,0.55)',
-  link: '#7de88a',
+  page: '#06180a',
+  hero: '#0a2711',
+  panel: '#0f2116',
+  panelStrong: '#12301b',
+  starColor: 'rgba(255,255,255,0.18)',
+  line: 'rgba(122, 217, 140, 0.14)',
+  lineStrong: 'rgba(122, 217, 140, 0.28)',
+  primary: '#59d27c',
+  primarySoft: 'rgba(89, 210, 124, 0.16)',
+  yellow: '#f2c94c',
+  textSoft: 'rgba(240, 247, 241, 0.72)',
+  textMuted: 'rgba(240, 247, 241, 0.55)',
 };
-
-type ProfileStats = {
-  visitasMes: number;
-  atribuidas: number;
-  concluidas: number;
-};
-
-const PREFERENCIAS = [
-  {
-    id: '1',
-    title: 'Região de atuação',
-    icon: 'navigate-circle-outline',
-  },
-  {
-    id: '2',
-    title: 'Notificações',
-    icon: 'notifications-outline',
-  },
-  {
-    id: '3',
-    title: 'Sincronização offline',
-    icon: 'cloud-done-outline',
-  },
-  {
-    id: '4',
-    title: 'Segurança da conta',
-    icon: 'shield-checkmark-outline',
-  },
-] as const;
 
 const STARS = Array.from({ length: 20 }, (_, i) => ({
   id: i,
@@ -92,52 +62,6 @@ const FIREFLIES = Array.from({ length: 4 }, (_, i) => ({
   delay: i * 350,
   size: 3 + Math.random() * 2,
 }));
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) {
-      return message;
-    }
-  }
-
-  return 'Erro desconhecido.';
-}
-
-function base64ToArrayBuffer(base64: string) {
-  const binaryString = globalThis.atob(base64);
-  const length = binaryString.length;
-  const bytes = new Uint8Array(length);
-
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  return bytes.buffer;
-}
-
-function extractAvatarPath(value: string) {
-  const publicMarker = '/storage/v1/object/public/avatares/';
-  const signMarker = '/storage/v1/object/sign/avatares/';
-
-  if (value.includes(publicMarker)) {
-    return decodeURIComponent(value.split(publicMarker)[1]?.split('?')[0] ?? '');
-  }
-
-  if (value.includes(signMarker)) {
-    return decodeURIComponent(value.split(signMarker)[1]?.split('?')[0] ?? '');
-  }
-
-  return value;
-}
-
-function getAvatarStorageKey(userId: string) {
-  return `profile-avatar-path:${userId}`;
-}
 
 function AnimatedStar({ star }: { star: (typeof STARS)[0] }) {
   const twinkle = useSharedValue(star.opacity);
@@ -232,464 +156,50 @@ function Firefly({
 }
 
 export default function PerfilScreen() {
-  const { logout, profile, refreshProfile, user } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [editVisible, setEditVisible] = useState(false);
-  const [photoOptionsVisible, setPhotoOptionsVisible] = useState(false);
-  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [avatarStoragePath, setAvatarStoragePath] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [stats, setStats] = useState<ProfileStats>({
-    visitasMes: 0,
-    atribuidas: 0,
-    concluidas: 0,
-  });
-
-  const loadStats = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      setStats({
-        visitasMes: 0,
-        atribuidas: 0,
-        concluidas: 0,
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const [visitasMesRes, atribuicoesRes, concluidasRes] = await Promise.all([
-      supabase
-        .from('visitas')
-        .select('*', { count: 'exact', head: true })
-        .eq('id_instrutor', currentUserId)
-        .gte('criado_em', startOfMonth.toISOString()),
-      supabase
-        .from('atribuicoes')
-        .select('*', { count: 'exact', head: true })
-        .eq('id_instrutor', currentUserId)
-        .eq('ativa', true),
-      supabase
-        .from('visitas')
-        .select('*', { count: 'exact', head: true })
-        .eq('id_instrutor', currentUserId),
-    ]);
-
-    if (visitasMesRes.error) {
-      throw visitasMesRes.error;
-    }
-
-    if (atribuicoesRes.error) {
-      throw atribuicoesRes.error;
-    }
-
-    if (concluidasRes.error) {
-      throw concluidasRes.error;
-    }
-
-    setStats({
-      visitasMes: visitasMesRes.count ?? 0,
-      atribuidas: atribuicoesRes.count ?? 0,
-      concluidas: concluidasRes.count ?? 0,
-    });
-  }, [profile?.id, user?.id]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function run() {
-      setIsLoading(true);
-      try {
-        await loadStats();
-      } catch (error) {
-        console.error('Erro ao carregar perfil do instrutor:', error);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    run();
-
-    return () => {
-      mounted = false;
-    };
-  }, [loadStats]);
-
-  useEffect(() => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      return;
-    }
-
-    const userId = currentUserId;
-
-    let cancelled = false;
-
-    async function hydrateAvatarPath() {
-      try {
-        const savedPath = await AsyncStorage.getItem(getAvatarStorageKey(userId));
-
-        if (!cancelled && savedPath) {
-          setAvatarStoragePath(savedPath);
-        }
-      } catch (error) {
-        console.error('Erro ao restaurar avatar salvo localmente:', error);
-      }
-    }
-
-    hydrateAvatarPath();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.id, user?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolveAvatar() {
-      const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
-
-      if (!sourcePath) {
-        setAvatarUrl((current) => current ?? null);
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase.storage.from('avatares').createSignedUrl(sourcePath, 60 * 60);
-
-        if (!cancelled && !error && data?.signedUrl) {
-          setAvatarUrl(`${data.signedUrl}${data.signedUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
-          return;
-        }
-      } catch (error) {
-        console.error('Erro ao resolver avatar assinado:', error);
-      }
-
-      if (!cancelled) {
-        const fallbackUrl = profile?.fotoUrl && profile.fotoUrl.startsWith('http')
-          ? profile.fotoUrl
-          : supabase.storage.from('avatares').getPublicUrl(sourcePath).data.publicUrl;
-        setAvatarUrl(`${fallbackUrl}${fallbackUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
-      }
-    }
-
-    resolveAvatar();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [avatarStoragePath, profile?.fotoUrl]);
-
-  useEffect(() => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      return;
-    }
-
-    const userId = currentUserId;
-
-    const sourcePath = profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : avatarStoragePath;
-
-    if (!sourcePath) {
-      return;
-    }
-
-    setAvatarStoragePath(sourcePath);
-    AsyncStorage.setItem(getAvatarStorageKey(userId), sourcePath).catch((error) => {
-      console.error('Erro ao persistir avatar localmente:', error);
-    });
-  }, [avatarStoragePath, profile?.fotoUrl, profile?.id, user?.id]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await Promise.all([loadStats(), refreshProfile()]);
-    } catch (error) {
-      console.error('Erro ao atualizar perfil do instrutor:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [loadStats, refreshProfile]);
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      router.replace('/login');
-    } catch (error) {
-      console.error('Erro ao sair da conta:', error);
-    }
-  };
-
-  const openPhotoOptions = useCallback(() => {
-    setPhotoOptionsVisible(true);
-  }, []);
-
-  const closePhotoOptions = useCallback(() => {
-    if (isUploadingPhoto) {
-      return;
-    }
-
-    setPhotoOptionsVisible(false);
-  }, [isUploadingPhoto]);
-
-  const handleViewPhoto = useCallback(() => {
-    if (!avatarUrl) {
-      Alert.alert('Sem foto', 'Você ainda não adicionou uma foto de perfil.');
-      return;
-    }
-
-    setPhotoOptionsVisible(false);
-    setPhotoViewerVisible(true);
-  }, [avatarUrl]);
-
-  const handlePickPhoto = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-
-    if (!currentUserId) {
-      Alert.alert('Perfil indisponível', 'Não foi possível identificar o usuário logado.');
-      return;
-    }
-
-    setPhotoOptionsVisible(false);
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permissão necessária', 'Permita acesso à galeria para alterar a foto de perfil.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets[0]) {
-      return;
-    }
-
-    const asset = result.assets[0];
-
-    try {
-      setIsUploadingPhoto(true);
-
-      const base64File = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const fileBuffer = base64ToArrayBuffer(base64File);
-      const extension = asset.fileName?.split('.').pop()?.toLowerCase() || 'jpg';
-      const filePath = `${currentUserId}/avatar-${Date.now()}.${extension}`;
-      setAvatarStoragePath(filePath);
-      await AsyncStorage.setItem(getAvatarStorageKey(currentUserId), filePath);
-
-      const { error: uploadError } = await supabase.storage.from('avatares').upload(filePath, fileBuffer, {
-        upsert: true,
-        contentType: asset.mimeType ?? 'image/jpeg',
-      });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const { data } = supabase.storage.from('avatares').getPublicUrl(filePath);
-
-      const { error: updateError } = await supabase
-        .from('usuarios')
-        .update({
-          foto_url: data.publicUrl,
-          atualizado_em: new Date().toISOString(),
-        })
-        .eq('id', currentUserId);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      const { data: signedData } = await supabase.storage.from('avatares').createSignedUrl(filePath, 60 * 60);
-      setAvatarUrl(
-        signedData?.signedUrl
-          ? `${signedData.signedUrl}${signedData.signedUrl.includes('?') ? '&' : '?'}t=${Date.now()}`
-          : `${data.publicUrl}?t=${Date.now()}`
-      );
-
-      await refreshProfile();
-      Alert.alert('Foto atualizada', 'A foto de perfil foi salva com sucesso.');
-    } catch (error) {
-      console.error('Erro ao enviar foto do instrutor:', error);
-      Alert.alert('Erro ao enviar', getErrorMessage(error));
-      setAvatarStoragePath(profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : null);
-    } finally {
-      setIsUploadingPhoto(false);
-    }
-  }, [profile?.fotoUrl, profile?.id, refreshProfile, user?.id]);
-
-  const openEditModal = useCallback(() => {
-    setEditName(profile?.nomeCompleto ?? '');
-    setEditPhone(profile?.telefone ?? '');
-    setEditVisible(true);
-  }, [profile?.nomeCompleto, profile?.telefone]);
-
-  const closeEditModal = useCallback(() => {
-    if (isSaving) {
-      return;
-    }
-
-    setEditVisible(false);
-  }, [isSaving]);
-
-  const handleSaveProfile = useCallback(async () => {
-    const currentUserId = profile?.id ?? user?.id;
-    const trimmedName = editName.trim();
-    const trimmedPhone = editPhone.trim();
-
-    if (!currentUserId) {
-      Alert.alert('Perfil indisponível', 'Não foi possível identificar o usuário logado.');
-      return;
-    }
-
-    if (!trimmedName) {
-      Alert.alert('Nome obrigatório', 'Informe o nome do instrutor para salvar o perfil.');
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-
-      const { error } = await supabase
-        .from('usuarios')
-        .update({
-          nome_completo: trimmedName,
-          telefone: trimmedPhone || null,
-        })
-        .eq('id', currentUserId);
-
-      if (error) {
-        throw error;
-      }
-
-      await refreshProfile();
-      setEditVisible(false);
-      Alert.alert('Perfil atualizado', 'As informações do instrutor foram salvas com sucesso.');
-    } catch (error) {
-      console.error('Erro ao salvar perfil do instrutor:', error);
-      Alert.alert('Erro ao salvar', getErrorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
-  }, [editName, editPhone, profile?.id, refreshProfile, user?.id]);
-
-  const displayName = useMemo(
-    () =>
-      profile?.nomeCompleto ??
-      user?.user_metadata?.nome_completo ??
-      user?.user_metadata?.name ??
-      user?.email ??
-      'Usuário',
-    [profile?.nomeCompleto, user?.email, user?.user_metadata]
-  );
-
-  const regionLabel = useMemo(() => {
-    if (!profile?.regionalNome) {
-      return 'Regional não vinculada';
-    }
-
-    return `${profile.regionalNome}${profile.regionalUf ? ` - ${profile.regionalUf}` : ''}`;
-  }, [profile?.regionalNome, profile?.regionalUf]);
-
-  const summaryCards = useMemo(
-    () => [
-      {
-        id: '1',
-        label: 'Visitas no mês',
-        value: isLoading ? '...' : String(stats.visitasMes),
-        icon: 'clipboard-outline' as const,
-        color: THEME.cornYellow,
-      },
-      {
-        id: '2',
-        label: 'Atribuídas',
-        value: isLoading ? '...' : String(stats.atribuidas),
-        icon: 'business-outline' as const,
-        color: colors.info,
-      },
-      {
-        id: '3',
-        label: 'Concluídas',
-        value: isLoading ? '...' : String(stats.concluidas),
-        icon: 'checkmark-done-outline' as const,
-        color: THEME.leafLight,
-      },
-    ],
-    [isLoading, stats]
-  );
-
-  const preferencesCopy = useMemo(
-    () => [
-      {
-        ...PREFERENCIAS[0],
-        subtitle: regionLabel,
-      },
-      {
-        ...PREFERENCIAS[1],
-        subtitle: 'Alertas de visitas e resultado das análises',
-      },
-      {
-        ...PREFERENCIAS[2],
-        subtitle: 'Sincronização local habilitada para este dispositivo',
-      },
-      {
-        ...PREFERENCIAS[3],
-        subtitle: profile?.ativo ? 'Conta ativa e autenticada no sistema' : 'Conta com acesso pendente',
-      },
-    ],
-    [profile?.ativo, regionLabel]
-  );
+  const {
+    avatarUrl,
+    closeEditModal,
+    closePhotoOptions,
+    displayName,
+    editName,
+    editPhone,
+    editVisible,
+    handleLogout,
+    handlePickPhoto,
+    handleRefresh,
+    handleSaveProfile,
+    handleViewPhoto,
+    isLoading,
+    isSaving,
+    isUploadingPhoto,
+    openEditModal,
+    openPhotoOptions,
+    photoOptionsVisible,
+    photoViewerVisible,
+    preferencesCopy,
+    profile,
+    refreshing,
+    regionLabel,
+    setEditName,
+    setEditPhone,
+    setPhotoViewerVisible,
+    summaryCards,
+    user,
+  } = useInstructorProfile(THEME.primary, THEME.yellow);
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
+      <StatusBar barStyle="light-content" backgroundColor={THEME.page} />
+      
 
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.leafLight} />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.primary} />
         }>
         <View style={styles.heroSection}>
           <View style={styles.skyBg} />
-
-          {STARS.map((star) => (
-            <AnimatedStar key={star.id} star={star} />
-          ))}
-
-          {FIREFLIES.map((firefly) => (
-            <Firefly key={firefly.id} {...firefly} />
-          ))}
-
-            <View style={styles.moonContainer}>
-            <View style={styles.moon}>
-              <View style={styles.moonInner}>
-                <View style={[styles.crater, { top: 5, left: 6, width: 5, height: 5 }]} />
-                <View style={[styles.crater, { top: 14, left: 16, width: 3, height: 3 }]} />
-                <View style={[styles.crater, { top: 20, left: 8, width: 4, height: 4 }]} />
-              </View>
-            </View>
-          </View>
 
           <View style={styles.header}>
             <Text style={styles.title}>Perfil</Text>
@@ -705,9 +215,9 @@ export default function PerfilScreen() {
                 )}
                 <View style={styles.avatarBadge}>
                   {isUploadingPhoto ? (
-                    <Ionicons name="sync-outline" size={12} color={THEME.skyTop} />
+                    <Ionicons name="sync-outline" size={12} color={THEME.hero} />
                   ) : (
-                    <Ionicons name="camera-outline" size={12} color={THEME.skyTop} />
+                    <Ionicons name="camera-outline" size={12} color={THEME.hero} />
                   )}
                 </View>
               </TouchableOpacity>
@@ -716,7 +226,7 @@ export default function PerfilScreen() {
                 <Text style={styles.role}>Instrutor de Campo</Text>
               </View>
               <TouchableOpacity style={styles.heroIconButton} activeOpacity={0.9} onPress={openEditModal}>
-                <Ionicons name="create-outline" size={18} color={THEME.link} />
+                <Ionicons name="create-outline" size={18} color={THEME.primary} />
               </TouchableOpacity>
             </View>
 
@@ -725,12 +235,12 @@ export default function PerfilScreen() {
                 <Ionicons
                   name={profile?.ativo ? 'checkmark-circle' : 'pause-circle'}
                   size={15}
-                  color={profile?.ativo ? THEME.leafLight : THEME.cornYellow}
+                  color={profile?.ativo ? THEME.primary : THEME.yellow}
                 />
                 <Text style={styles.badgeText}>{profile?.ativo ? 'Ativo' : 'Pendente'}</Text>
               </View>
               <View style={styles.badge}>
-                <Ionicons name="location-outline" size={15} color={THEME.cornYellow} />
+                <Ionicons name="location-outline" size={15} color={THEME.yellow} />
                 <Text style={styles.badgeText}>
                   {profile?.regionalUf ? profile.regionalUf : 'Sem regional'}
                 </Text>
@@ -739,28 +249,28 @@ export default function PerfilScreen() {
 
             <View style={styles.inlineInfoRow}>
               <View style={styles.inlineInfoPill}>
-                <Ionicons name="navigate-circle-outline" size={16} color={THEME.cornYellow} />
+                <Ionicons name="navigate-circle-outline" size={16} color={THEME.yellow} />
                 <Text style={styles.inlineInfoText}>{regionLabel}</Text>
               </View>
               <View style={styles.inlineInfoPill}>
-                <Ionicons name="call-outline" size={16} color={THEME.link} />
+                <Ionicons name="call-outline" size={16} color={THEME.primary} />
                 <Text style={styles.inlineInfoText}>{profile?.telefone ?? 'Não informado'}</Text>
               </View>
             </View>
 
             <View style={styles.emailCard}>
-              <Ionicons name="mail-outline" size={18} color={THEME.link} />
+              <Ionicons name="mail-outline" size={18} color={THEME.primary} />
               <Text style={styles.emailText}>{profile?.email ?? user?.email ?? 'Sem e-mail cadastrado'}</Text>
             </View>
 
             <TouchableOpacity style={styles.photoHint} activeOpacity={0.85} onPress={openPhotoOptions} disabled={isUploadingPhoto}>
-              <Ionicons name="image-outline" size={16} color={THEME.link} />
+              <Ionicons name="image-outline" size={16} color={THEME.primary} />
               <Text style={styles.photoHintText}>{isUploadingPhoto ? 'Enviando foto...' : 'Toque no avatar para ver ou trocar a foto'}</Text>
             </TouchableOpacity>
 
             <View style={styles.heroActions}>
               <TouchableOpacity style={styles.heroActionSecondary} activeOpacity={0.92} onPress={handleRefresh}>
-                <Ionicons name="refresh-outline" size={16} color={THEME.link} />
+                <Ionicons name="refresh-outline" size={16} color={THEME.primary} />
                 <Text style={styles.heroActionSecondaryText}>Atualizar</Text>
               </TouchableOpacity>
             </View>
@@ -779,12 +289,14 @@ export default function PerfilScreen() {
           ))}
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PREFERENCIAS E OPERACAO</Text>
+        <SectionCard
+          containerStyle={styles.section}
+          title="PREFERENCIAS E OPERACAO"
+          titleStyle={styles.sectionTitle}>
           {preferencesCopy.map((item) => (
             <TouchableOpacity key={item.id} activeOpacity={0.9} style={styles.preferenceRow}>
               <View style={styles.preferenceIcon}>
-                <Ionicons name={item.icon} size={18} color={THEME.leafLight} />
+                <Ionicons name={item.icon} size={18} color={THEME.primary} />
               </View>
               <View style={styles.preferenceCopy}>
                 <Text style={styles.preferenceTitle}>{item.title}</Text>
@@ -793,7 +305,7 @@ export default function PerfilScreen() {
               <Ionicons name="chevron-forward" size={18} color="#96A099" />
             </TouchableOpacity>
           ))}
-        </View>
+        </SectionCard>
 
         <TouchableOpacity activeOpacity={0.92} style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={colors.danger} />
@@ -859,12 +371,12 @@ export default function PerfilScreen() {
             </View>
 
             <TouchableOpacity style={styles.photoOptionButton} activeOpacity={0.9} onPress={handleViewPhoto}>
-              <Ionicons name="eye-outline" size={18} color={THEME.link} />
+              <Ionicons name="eye-outline" size={18} color={THEME.primary} />
               <Text style={styles.photoOptionText}>Ver foto</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.photoOptionButton} activeOpacity={0.9} onPress={handlePickPhoto}>
-              <Ionicons name="image-outline" size={18} color={THEME.link} />
+              <Ionicons name="image-outline" size={18} color={THEME.primary} />
               <Text style={styles.photoOptionText}>Trocar foto</Text>
             </TouchableOpacity>
           </View>
@@ -886,7 +398,7 @@ export default function PerfilScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: THEME.page },
   content: { paddingBottom: 110 },
   heroSection: {
     paddingHorizontal: 18,
@@ -901,52 +413,22 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: THEME.skyTop,
-  },
-  moonContainer: {
-    position: 'absolute',
-    top: 20,
-    right: 60,
-  },
-  moon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#fffbe0',
-    shadowColor: '#fffbe0',
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
-  },
-  moonInner: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 15,
-    backgroundColor: '#fffbe0',
-    overflow: 'hidden',
-  },
-  crater: {
-    position: 'absolute',
-    backgroundColor: 'rgba(200,190,150,0.4)',
-    borderRadius: 50,
+    backgroundColor: THEME.page,
   },
   header: { marginBottom: 16, zIndex: 10 },
-  title: {
-    color: '#fff',
-    fontSize: 29,
-    fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
+  title: { color: '#fff', fontSize: 29, fontWeight: '800' },
   heroCard: {
-    backgroundColor: THEME.cardBg,
-    borderRadius: 24,
-    padding: 14,
+    backgroundColor: THEME.hero,
+    borderRadius: 26,
+    padding: 16,
     borderWidth: 1,
-    borderColor: THEME.cardBorder,
+    borderColor: THEME.lineStrong,
     zIndex: 10,
+    shadowColor: '#030804',
+    shadowOpacity: 0.24,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 6,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   avatar: {
@@ -959,8 +441,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
     borderWidth: 3,
-    borderColor: 'rgba(77,200,90,0.3)',
-    shadowColor: THEME.leafLight,
+    borderColor: THEME.lineStrong,
+    shadowColor: THEME.primary,
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 5,
@@ -976,11 +458,11 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: THEME.leafLight,
+    backgroundColor: THEME.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: THEME.skyTop,
+    borderColor: THEME.hero,
   },
   heroCopy: { flex: 1 },
   heroIconButton: {
@@ -989,9 +471,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: THEME.panel,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: THEME.line,
   },
   name: {
     color: '#fff',
@@ -1002,18 +484,18 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  role: { color: THEME.link, fontSize: 12, marginBottom: 0 },
+  role: { color: THEME.primary, fontSize: 12, marginBottom: 0, fontWeight: '700' },
   badgesRow: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: THEME.panel,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: THEME.line,
   },
   badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   inlineInfoRow: {
@@ -1026,12 +508,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: THEME.panelStrong,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: THEME.line,
     maxWidth: '100%',
   },
   inlineInfoText: {
@@ -1044,12 +526,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: THEME.panelStrong,
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 11,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: THEME.line,
     marginBottom: 10,
   },
   emailText: {
@@ -1065,7 +547,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   photoHintText: {
-    color: THEME.link,
+    color: THEME.primary,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1073,14 +555,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: colors.background,
+    backgroundColor: THEME.panel,
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 14,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: THEME.line,
   },
   photoOptionText: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1093,33 +577,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: THEME.panel,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 11,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.15)',
+    borderColor: THEME.line,
   },
   heroActionSecondaryText: {
-    color: THEME.link,
+    color: THEME.primary,
     fontSize: 13,
     fontWeight: '700',
   },
   summaryGrid: { flexDirection: 'row', gap: 10, marginBottom: 16, paddingHorizontal: 18 },
   summaryCard: {
     flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: 20,
+    backgroundColor: THEME.panel,
+    borderRadius: 22,
     paddingVertical: 16,
     paddingHorizontal: 10,
     alignItems: 'center',
-    shadowColor: '#0B1E17',
+    shadowColor: '#030804',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.16,
     shadowRadius: 14,
-    elevation: 2,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.1)',
+    borderColor: THEME.line,
   },
   summaryIcon: {
     width: 40,
@@ -1129,24 +613,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 10,
   },
-  summaryValue: { color: colors.textDark, fontSize: 28, fontWeight: '800', marginBottom: 2 },
-  summaryLabel: { color: colors.textMuted, fontSize: 12, textAlign: 'center' },
+  summaryValue: { color: '#fff', fontSize: 28, fontWeight: '800', marginBottom: 2 },
+  summaryLabel: { color: THEME.textSoft, fontSize: 12, textAlign: 'center' },
   section: {
-    backgroundColor: colors.card,
+    backgroundColor: THEME.panel,
     borderRadius: 22,
     padding: 16,
     marginBottom: 14,
     marginHorizontal: 18,
-    shadowColor: '#0B1E17',
+    shadowColor: '#030804',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.16,
     shadowRadius: 18,
-    elevation: 2,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.1)',
+    borderColor: THEME.line,
   },
   sectionTitle: {
-    color: THEME.skyTop,
+    color: THEME.primary,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
@@ -1157,32 +641,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(77,200,90,0.15)',
+    borderTopColor: THEME.line,
   },
   preferenceIcon: {
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: 'rgba(77,200,90,0.12)',
+    backgroundColor: THEME.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   preferenceCopy: { flex: 1 },
-  preferenceTitle: { color: colors.textDark, fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  preferenceSubtitle: { color: colors.textMuted, fontSize: 12, lineHeight: 16 },
+  preferenceTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  preferenceSubtitle: { color: THEME.textSoft, fontSize: 12, lineHeight: 16 },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FFF0F0',
+    backgroundColor: 'rgba(255, 125, 125, 0.1)',
     borderRadius: 18,
     paddingVertical: 15,
     marginTop: 4,
     marginHorizontal: 18,
     borderWidth: 1,
-    borderColor: 'rgba(226,91,91,0.2)',
+    borderColor: 'rgba(255, 125, 125, 0.18)',
   },
   logoutText: { color: colors.danger, fontSize: 15, fontWeight: '700' },
   modalOverlay: {
@@ -1192,11 +676,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   modalCard: {
-    backgroundColor: colors.card,
+    backgroundColor: THEME.panel,
     borderRadius: 24,
     padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.12)',
+    borderColor: THEME.line,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1205,7 +689,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 20,
     fontWeight: '800',
   },
@@ -1215,25 +699,25 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: THEME.panelStrong,
   },
   inputGroup: {
     marginBottom: 14,
   },
   inputLabel: {
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 6,
   },
   input: {
-    backgroundColor: colors.background,
+    backgroundColor: THEME.panelStrong,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(77,200,90,0.12)',
+    borderColor: THEME.line,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: colors.textDark,
+    color: '#fff',
     fontSize: 14,
   },
   modalActions: {
@@ -1247,10 +731,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 14,
     paddingVertical: 13,
-    backgroundColor: colors.background,
+    backgroundColor: THEME.panelStrong,
   },
   secondaryButtonText: {
-    color: colors.textMuted,
+    color: THEME.textSoft,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1260,10 +744,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 14,
     paddingVertical: 13,
-    backgroundColor: THEME.leafLight,
+    backgroundColor: THEME.primary,
   },
   primaryButtonText: {
-    color: THEME.skyTop,
+    color: THEME.hero,
     fontSize: 14,
     fontWeight: '800',
   },

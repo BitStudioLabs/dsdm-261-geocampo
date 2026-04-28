@@ -20,6 +20,7 @@ export type UserProfile = {
   perfil: UserRole;
   telefone: string | null;
   fotoUrl: string | null;
+  fotoPath: string | null;
   ativo: boolean;
   criadoEm: string | null;
   regionalNome: string | null;
@@ -31,7 +32,7 @@ type AuthContextType = {
   user: User | null;
   profile: UserProfile | null;
   role: UserRole;
-  homeRoute: '/(tabs)' | '/(tabs-gestor)';
+  homeRoute: '/(tabs)' | '/(tabs-gestor)' | '/(tabs-proprietario)';
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -63,6 +64,7 @@ function normalizeProfile(row: any, authUser: User): UserProfile {
     perfil: row?.perfil ?? null,
     telefone: row?.telefone ?? null,
     fotoUrl: row?.foto_url ?? null,
+    fotoPath: row?.foto_path ?? null,
     ativo: row?.ativo ?? true,
     criadoEm: row?.criado_em ?? authUser.created_at ?? null,
     regionalNome: row?.regioes?.nome ?? null,
@@ -70,13 +72,17 @@ function normalizeProfile(row: any, authUser: User): UserProfile {
   };
 }
 
-function getHomeRoute(role: UserRole): '/(tabs)' | '/(tabs-gestor)' {
+function getHomeRoute(role: UserRole): '/(tabs)' | '/(tabs-gestor)' | '/(tabs-proprietario)' {
   if (role === 'admin') {
     return '/(tabs-gestor)';
   }
 
   if (role === 'instrutor') {
     return '/(tabs)';
+  }
+
+  if (role === 'proprietario') {
+    return '/(tabs-proprietario)';
   }
 
   return '/(tabs)';
@@ -109,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome_completo, email, perfil, telefone, foto_url, ativo, criado_em, regioes(nome, uf)')
+      .select('id, nome_completo, email, perfil, telefone, foto_url, foto_path, ativo, criado_em, regioes(nome, uf)')
       .eq('id', currentUser.id)
       .single();
 
@@ -200,6 +206,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) {
+      if (error.message?.toLowerCase().includes('email not confirmed')) {
+        throw new Error(
+          'Este e-mail ainda nao foi confirmado no Supabase. Confirme o link enviado para a caixa de entrada ou crie o usuario pela rota administrativa com confirmacao imediata.'
+        );
+      }
+
       throw new Error(error.message);
     }
   }, []);
