@@ -529,7 +529,7 @@ export default function VisitasScreen() {
         <SectionCard containerStyle={styles.section}>
           <View style={styles.geoHeader}>
             <View>
-              <Text style={styles.geoTitle}>Geolocalização extraída</Text>
+              <Text style={styles.geoTitle}>Localização extraída</Text>
               <Text style={styles.geoSubtitle}>
                 Metadados da foto selecionada para {selectedProperty?.nome ?? 'a propriedade escolhida'}
               </Text>
@@ -547,7 +547,7 @@ export default function VisitasScreen() {
                 color={THEME.leafLight}
               />
               <Text style={styles.geoBadgeText}>
-                {!selectedPhoto ? 'Aguardando foto' : selectedPhoto.hasGps ? 'GPS detectado' : 'Sem GPS'}
+                {!selectedPhoto ? 'Aguardando foto' : selectedPhoto.hasGps ? selectedPhoto.locationSourceLabel : 'Sem GPS'}
               </Text>
             </View>
           </View>
@@ -579,7 +579,7 @@ export default function VisitasScreen() {
             <View style={styles.comparisonRow}>
               <Ionicons name="location-outline" size={16} color={THEME.skyMid} />
               <View style={styles.comparisonCopy}>
-                <Text style={styles.comparisonLabel}>Coordenadas da propriedade</Text>
+                <Text style={styles.comparisonLabel}>Validação da foto</Text>
                 <Text style={styles.comparisonValue}>{propertyCoordinatesLabel}</Text>
               </View>
             </View>
@@ -1214,6 +1214,3 @@ const styles = StyleSheet.create({
   },
   historyBadgeText: { fontSize: 12, fontWeight: '700' },
 });
-
-
-

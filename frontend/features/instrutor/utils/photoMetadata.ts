@@ -1,4 +1,4 @@
-import * as MediaLibrary from 'expo-media-library';
+﻿import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 
 import type { SelectedPhoto } from '@/features/instrutor/types/visitas';
@@ -25,18 +25,22 @@ function getExifValue(exif: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function cleanExifNumber(value: string) {
+  return value.replace(/[\[\]{}()]/g, '').trim();
+}
+
 function toNumericExifPart(value: unknown): number | null {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;
   }
 
   if (typeof value === 'string') {
-    const normalized = value.trim();
+    const normalized = cleanExifNumber(value);
     if (!normalized) {
       return null;
     }
 
-    if (normalized.includes('/')) {
+    if (normalized.includes('/') && !normalized.includes(',')) {
       const [rawA, rawB] = normalized.split('/');
       const a = Number(rawA);
       const b = Number(rawB);
@@ -73,15 +77,11 @@ function toDecimalCoordinate(value: unknown, ref?: string) {
       return null;
     }
 
-    if (ref === 'S' || ref === 'W') {
-      return value * -1;
-    }
-
-    return value;
+    return ref === 'S' || ref === 'W' ? value * -1 : value;
   }
 
   if (typeof value === 'string') {
-    const normalized = value.trim();
+    const normalized = cleanExifNumber(value);
     if (!normalized) {
       return null;
     }
@@ -92,6 +92,7 @@ function toDecimalCoordinate(value: unknown, ref?: string) {
     }
 
     const parts = normalized
+      .replace(/[;|]/g, ',')
       .split(/[,\s]+/)
       .map((part) => toNumericExifPart(part))
       .filter((part): part is number => part != null);
@@ -126,6 +127,10 @@ function formatCoordinate(value: number | null, suffix = '') {
   }
 
   return `${value.toFixed(5)}${suffix}`;
+}
+
+function hasValidCoordinate(latitude: number | null, longitude: number | null) {
+  return latitude != null && longitude != null;
 }
 
 function parseExifDate(value: string | null) {
@@ -199,17 +204,17 @@ export async function enrichAssetWithMediaLibrary(asset: ImagePicker.ImagePicker
       ...assetExif,
     };
 
-    if (mediaLocation?.latitude != null && mergedExif.latitude == null && mergedExif.GPSLatitude == null) {
+    if (mediaLocation?.latitude != null) {
       mergedExif.latitude = mediaLocation.latitude;
       mergedExif.GPSLatitudeDecimal = mediaLocation.latitude;
     }
 
-    if (mediaLocation?.longitude != null && mergedExif.longitude == null && mergedExif.GPSLongitude == null) {
+    if (mediaLocation?.longitude != null) {
       mergedExif.longitude = mediaLocation.longitude;
       mergedExif.GPSLongitudeDecimal = mediaLocation.longitude;
     }
 
-    if (mediaLocation?.altitude != null && mergedExif.altitude == null && mergedExif.GPSAltitude == null) {
+    if (mediaLocation?.altitude != null) {
       mergedExif.altitude = mediaLocation.altitude;
       mergedExif.GPSAltitude = mediaLocation.altitude;
     }
@@ -229,6 +234,7 @@ export function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): Selecte
   const exifFieldCount = Object.keys(exif).length;
   const latitude = extractCoordinate(exif, 'latitude');
   const longitude = extractCoordinate(exif, 'longitude');
+  const hasPhotoGps = hasValidCoordinate(latitude, longitude);
   const altitudeValue = extractAltitude(exif);
   const altitude = altitudeValue != null ? `${Math.round(altitudeValue)}m` : 'Não disponível';
   const rawDate =
@@ -246,7 +252,10 @@ export function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): Selecte
     extension,
     mimeType: asset.mimeType || 'image/jpeg',
     fileSizeLabel: formatFileSize(asset.fileSize),
+    fileSizeBytes: typeof asset.fileSize === 'number' ? asset.fileSize : null,
     dimensions: `${asset.width} x ${asset.height}`,
+    width: typeof asset.width === 'number' ? asset.width : null,
+    height: typeof asset.height === 'number' ? asset.height : null,
     cameraModel,
     latitude: formatCoordinate(latitude),
     longitude: formatCoordinate(longitude),
@@ -257,8 +266,34 @@ export function buildSelectedPhoto(asset: ImagePicker.ImagePickerAsset): Selecte
     altitudeValue,
     capturedAtIso: parseExifDate(rawDate),
     hasExif: exifFieldCount > 0,
-    hasGps: latitude != null && longitude != null,
+    hasGps: hasPhotoGps,
+    locationSource: hasPhotoGps ? 'photo' : 'none',
+    locationSourceLabel: hasPhotoGps ? 'GPS da foto' : 'Sem GPS',
     exifFieldCount,
+  };
+}
+
+export function applyDeviceLocationFallback(
+  photo: SelectedPhoto,
+  coords: { latitude: number; longitude: number; altitude?: number | null }
+): SelectedPhoto {
+  if (photo.hasGps || !hasValidCoordinate(coords.latitude, coords.longitude)) {
+    return photo;
+  }
+
+  const altitudeValue = typeof coords.altitude === 'number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
+
+  return {
+    ...photo,
+    latitude: formatCoordinate(coords.latitude),
+    longitude: formatCoordinate(coords.longitude),
+    altitude: altitudeValue != null ? `${Math.round(altitudeValue)}m` : photo.altitude,
+    latitudeValue: coords.latitude,
+    longitudeValue: coords.longitude,
+    altitudeValue,
+    hasGps: true,
+    locationSource: 'device',
+    locationSourceLabel: 'Localização do aparelho',
   };
 }
 

@@ -19,11 +19,12 @@ import {
   updateQueuedInstructorVisit,
 } from '@/features/instrutor/offline/visitQueue';
 import { base64ToArrayBuffer } from '@/features/instrutor/utils/photoMetadata';
-import { formatDate, formatTime, hasPendingAssignment } from '@/features/instrutor/utils/visitFormatting';
+import { calculateDistanceInMeters, formatDate, formatTime, hasPendingAssignment } from '@/features/instrutor/utils/visitFormatting';
 import { mapVisitStatusToHistoryLabel } from '@/features/instrutor/utils/visitStatus';
 
 const VISIT_EVIDENCE_BUCKET = 'evidencias-visitas';
 const VISITS_CACHE_PREFIX = 'instrutor-visitas-cache:';
+const PHOTO_METADATA_TABLE = 'metadados_foto_visita';
 
 type VisitsCachePayload = {
   properties: PropertyOption[];
@@ -111,13 +112,76 @@ function buildQueuedVisitHistoryItem(item: QueuedVisitRecord): VisitHistoryItem 
     syncStatus: item.syncStatus,
   };
 }
+function calculatePhotoDistanceMeters(selectedPhoto: SelectedPhoto, property: PropertyOption) {
+  if (
+    selectedPhoto.latitudeValue == null ||
+    selectedPhoto.longitudeValue == null ||
+    property.latitude == null ||
+    property.longitude == null
+  ) {
+    return null;
+  }
 
+  return calculateDistanceInMeters(
+    selectedPhoto.latitudeValue,
+    selectedPhoto.longitudeValue,
+    property.latitude,
+    property.longitude
+  );
+}
+
+function calculateTimeDifferenceMinutes(capturedAtIso: string | null, uploadedAtIso: string) {
+  if (!capturedAtIso) {
+    return null;
+  }
+
+  const capturedAt = new Date(capturedAtIso).getTime();
+  const uploadedAt = new Date(uploadedAtIso).getTime();
+
+  if (Number.isNaN(capturedAt) || Number.isNaN(uploadedAt)) {
+    return null;
+  }
+
+  return Math.round((uploadedAt - capturedAt) / 60000);
+}
+
+function buildPhotoMetadataPayload(params: {
+  filePath: string;
+  property: PropertyOption;
+  publicUrl: string;
+  selectedPhoto: SelectedPhoto;
+  uploadedAtIso: string;
+  visitId: number;
+}) {
+  const { filePath, property, publicUrl, selectedPhoto, uploadedAtIso, visitId } = params;
+
+  return {
+    id_visita: visitId,
+    foto_url: publicUrl,
+    foto_path: filePath,
+    latitude: selectedPhoto.latitudeValue,
+    longitude: selectedPhoto.longitudeValue,
+    altitude: selectedPhoto.altitudeValue,
+    capturado_em: selectedPhoto.capturedAtIso,
+    camera_model: selectedPhoto.cameraModel,
+    file_name: selectedPhoto.fileName,
+    file_size: selectedPhoto.fileSizeBytes,
+    mime_type: selectedPhoto.mimeType,
+    width: selectedPhoto.width,
+    height: selectedPhoto.height,
+    has_exif: selectedPhoto.hasExif,
+    has_gps: selectedPhoto.hasGps,
+    distancia_metros: calculatePhotoDistanceMeters(selectedPhoto, property),
+    diferenca_tempo_minutos: calculateTimeDifferenceMinutes(selectedPhoto.capturedAtIso, uploadedAtIso),
+  };
+}
 async function finalizeRemoteVisitUpload(params: {
   currentUserId: string;
+  property: PropertyOption;
   selectedPhoto: SelectedPhoto;
   visitId: number;
 }) {
-  const { currentUserId, selectedPhoto, visitId } = params;
+  const { currentUserId, property, selectedPhoto, visitId } = params;
   const base64File = await FileSystem.readAsStringAsync(selectedPhoto.uri, {
     encoding: FileSystem.EncodingType.Base64,
   });
@@ -138,6 +202,7 @@ async function finalizeRemoteVisitUpload(params: {
   }
 
   const publicUrl = supabase.storage.from(VISIT_EVIDENCE_BUCKET).getPublicUrl(filePath).data.publicUrl;
+  const uploadedAtIso = new Date().toISOString();
   const { error: updateError } = await supabase
     .from('visitas')
     .update({
@@ -148,7 +213,7 @@ async function finalizeRemoteVisitUpload(params: {
       altitude: selectedPhoto.altitudeValue,
       capturado_em: selectedPhoto.capturedAtIso,
       status_visita: 'em_andamento',
-      atualizado_em: new Date().toISOString(),
+      atualizado_em: uploadedAtIso,
     })
     .eq('id', visitId);
 
@@ -160,6 +225,21 @@ async function finalizeRemoteVisitUpload(params: {
     };
   }
 
+  const { error: metadataError } = await supabase.from(PHOTO_METADATA_TABLE).insert(
+    buildPhotoMetadataPayload({
+      filePath,
+      property,
+      publicUrl,
+      selectedPhoto,
+      uploadedAtIso,
+      visitId,
+    })
+  );
+
+  if (metadataError) {
+    console.warn('Visita salva, mas nao foi possivel gravar os metadados da foto:', metadataError);
+  }
+
   return {
     visitId,
     filePath,
@@ -169,11 +249,11 @@ async function finalizeRemoteVisitUpload(params: {
 
 async function createRemoteInstructorVisit(params: {
   currentUserId: string;
-  propertyId: number;
+  property: PropertyOption;
   selectedPhoto: SelectedPhoto;
   existingVisitId?: number | null;
 }) {
-  const { currentUserId, existingVisitId = null, propertyId, selectedPhoto } = params;
+  const { currentUserId, existingVisitId = null, property, selectedPhoto } = params;
 
   let visitId = existingVisitId;
 
@@ -182,7 +262,7 @@ async function createRemoteInstructorVisit(params: {
       .from('visitas')
       .insert({
         id_instrutor: currentUserId,
-        id_propriedade: propertyId,
+        id_propriedade: property.id,
         criado_em: new Date().toISOString(),
         status_visita: 'pendente',
       })
@@ -197,18 +277,19 @@ async function createRemoteInstructorVisit(params: {
   }
 
   if (!visitId) {
-    throw new Error('Não foi possível criar a visita remota.');
+    throw new Error('Nao foi possivel criar a visita remota.');
   }
 
   await finalizeRemoteVisitUpload({
     currentUserId,
+    property,
     selectedPhoto,
     visitId,
   });
 
   return {
     visitId,
-    propertyId,
+    propertyId: property.id,
   };
 }
 
@@ -398,7 +479,7 @@ export async function syncQueuedInstructorVisits(currentUserId: string) {
     try {
       await createRemoteInstructorVisit({
         currentUserId,
-        propertyId: item.property.id,
+        property: item.property,
         selectedPhoto: item.selectedPhoto,
         existingVisitId: item.remoteVisitId ?? null,
       });
@@ -457,7 +538,7 @@ export async function createInstructorVisit(params: {
   try {
     const result = await createRemoteInstructorVisit({
       currentUserId,
-      propertyId: property.id,
+      property,
       selectedPhoto,
     });
 

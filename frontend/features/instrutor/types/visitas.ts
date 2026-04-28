@@ -52,13 +52,18 @@ export type PropertyLookup = Record<
   }
 >;
 
+export type PhotoLocationSource = 'photo' | 'device' | 'none';
+
 export type SelectedPhoto = {
   uri: string;
   fileName: string;
   extension: string;
   mimeType: string;
   fileSizeLabel: string;
+  fileSizeBytes: number | null;
   dimensions: string;
+  width: number | null;
+  height: number | null;
   cameraModel: string;
   latitude: string;
   longitude: string;
@@ -70,6 +75,8 @@ export type SelectedPhoto = {
   capturedAtIso: string | null;
   hasExif: boolean;
   hasGps: boolean;
+  locationSource: PhotoLocationSource;
+  locationSourceLabel: string;
   exifFieldCount: number;
 };
 

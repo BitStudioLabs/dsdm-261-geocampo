@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { createInstructorVisit, fetchInstructorVisitsData, syncQueuedInstructorVisits } from '@/features/instrutor/api/visitas';
 import type { PropertyOption, SelectedPhoto, VisitHistoryItem } from '@/features/instrutor/types/visitas';
 import {
+  applyDeviceLocationFallback,
   buildSelectedPhoto,
   enrichAssetWithMediaLibrary,
   getPhotoMetadataErrorMessage,
@@ -194,7 +196,25 @@ export function useInstructorVisits() {
       }
 
       const enrichedAsset = await enrichAssetWithMediaLibrary(result.assets[0]);
-      setSelectedPhoto(buildSelectedPhoto(enrichedAsset));
+      let nextPhoto = buildSelectedPhoto(enrichedAsset);
+
+      if (!nextPhoto.hasGps) {
+        try {
+          const locationPermission = await Location.requestForegroundPermissionsAsync();
+
+          if (locationPermission.granted) {
+            const currentPosition = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+
+            nextPhoto = applyDeviceLocationFallback(nextPhoto, currentPosition.coords);
+          }
+        } catch (locationError) {
+          console.warn('Não foi possível usar a localização atual como fallback da visita:', locationError);
+        }
+      }
+
+      setSelectedPhoto(nextPhoto);
     } catch (error) {
       console.error('Erro ao selecionar foto da visita:', error);
       Alert.alert('Erro ao selecionar foto', 'Não foi possível abrir sua galeria agora.');
