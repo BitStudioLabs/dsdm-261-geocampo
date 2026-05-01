@@ -25,6 +25,7 @@ import Animated, {
 
 import { colors } from '@/src/theme/colors';
 import { supabase } from '@/src/lib/supabase';
+import { fetchNetworkRisk, type NetworkRiskResult } from '@/features/antifraude/networkRisk';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -241,6 +242,8 @@ export default function AvaliadorScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [visit, setVisit] = useState<VisitRow | null>(null);
   const [analysisSaveError, setAnalysisSaveError] = useState('');
+  const [networkRisk, setNetworkRisk] = useState<NetworkRiskResult | null>(null);
+  const [isCheckingNetwork, setIsCheckingNetwork] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -291,6 +294,26 @@ export default function AvaliadorScreen() {
     };
   }, [params.visitId]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadNetworkRisk() {
+      setIsCheckingNetwork(true);
+      const risk = await fetchNetworkRisk();
+
+      if (mounted) {
+        setNetworkRisk(risk);
+        setIsCheckingNetwork(false);
+      }
+    }
+
+    loadNetworkRisk();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const property = useMemo(() => getPropertyRecord(visit?.propriedades ?? null), [visit?.propriedades]);
 
   const distanceMeters = useMemo(() => {
@@ -321,6 +344,9 @@ export default function AvaliadorScreen() {
     return Math.round(Math.abs(createdAt - capturedAt) / 60000);
   }, [visit?.capturado_em, visit?.criado_em]);
 
+  const vpnDetected = networkRisk?.available === true && networkRisk.vpnSuspected;
+  const scoreVpn = !networkRisk || !networkRisk.available ? 70 : networkRisk.vpnSuspected ? 20 : 100;
+
   const score = useMemo(() => {
     let nextScore = 100;
 
@@ -346,10 +372,25 @@ export default function AvaliadorScreen() {
       nextScore -= 20;
     }
 
+    if (networkRisk?.available && networkRisk.vpnSuspected) {
+      nextScore -= 35;
+    } else if (networkRisk && !networkRisk.available) {
+      nextScore -= 5;
+    }
+
     return Math.max(0, Math.min(100, nextScore));
-  }, [distanceMeters, timeDifferenceMinutes]);
+  }, [distanceMeters, networkRisk, timeDifferenceMinutes]);
 
   const reliability = useMemo(() => {
+    if (vpnDetected) {
+      return {
+        headline: 'Possivel VPN Detectada',
+        description: 'A conexao usada na analise tem sinais de VPN, proxy, nuvem ou datacenter.',
+        badge: 'Rede suspeita',
+        color: colors.danger,
+      };
+    }
+
     if (score >= 80) {
       return {
         headline: 'Alta Confiabilidade',
@@ -372,9 +413,9 @@ export default function AvaliadorScreen() {
       headline: 'Baixa Confiabilidade',
       description: 'A evidencia esta distante da propriedade ou sem metadados suficientes para validar a presenca.',
       badge: 'Alta suspeita',
-        color: colors.danger,
+      color: colors.danger,
     };
-  }, [score]);
+  }, [score, vpnDetected]);
 
   const scoreDistance = useMemo(() => {
     if (distanceMeters == null) {
@@ -394,7 +435,7 @@ export default function AvaliadorScreen() {
     }
 
     return 20;
-  }, [distanceMeters]);
+  }, [distanceMeters, vpnDetected]);
 
   const scoreExifTimestamp = useMemo(() => {
     if (timeDifferenceMinutes == null) {
@@ -413,12 +454,16 @@ export default function AvaliadorScreen() {
   }, [timeDifferenceMinutes]);
 
   const classification = useMemo<'valida' | 'suspeita' | 'alto_risco_vpn'>(() => {
+    if (vpnDetected) {
+      return 'alto_risco_vpn';
+    }
+
     if (score >= 80) {
       return 'valida';
     }
 
     return 'suspeita';
-  }, [score]);
+  }, [score, vpnDetected]);
 
   const criteria = useMemo<Criterion[]>(() => {
     const distanceDescription =
@@ -458,6 +503,17 @@ export default function AvaliadorScreen() {
         ? `GPS extraido com sucesso (${visit.latitude.toFixed(5)}, ${visit.longitude.toFixed(5)}).`
         : 'A foto enviada nao trouxe latitude/longitude nos metadados.';
 
+    const vpnDescription = isCheckingNetwork
+      ? 'Verificando IP publico e provedor da conexao...'
+      : !networkRisk?.available
+        ? `Nao foi possivel verificar VPN/proxy: ${networkRisk?.reason ?? 'consulta indisponivel'}.`
+        : networkRisk.vpnSuspected
+          ? `Possivel VPN/proxy detectado no provedor do IP: ${networkRisk.org ?? networkRisk.ip ?? 'origem desconhecida'}.`
+          : `IP sem sinais comuns de VPN/proxy (${networkRisk.org ?? networkRisk.ip ?? 'provedor nao identificado'}).`;
+
+    const vpnProgress = isCheckingNetwork ? 0.45 : scoreVpn / 100;
+    const vpnStatus = !vpnDetected && networkRisk?.available ? 'ok' : 'warning';
+
     return [
       {
         id: '1',
@@ -486,10 +542,23 @@ export default function AvaliadorScreen() {
         cor: timeDifferenceMinutes != null && timeDifferenceMinutes <= 10 ? THEME.leafLight : colors.warning,
         status: timeDifferenceMinutes != null && timeDifferenceMinutes <= 10 ? 'ok' : 'warning',
       },
+      {
+        id: '4',
+        titulo: 'Indicadores de VPN',
+        descricao: vpnDescription,
+        progresso: vpnProgress,
+        icon: 'shield-checkmark-outline',
+        cor: vpnStatus === 'ok' ? THEME.leafLight : colors.warning,
+        status: vpnStatus,
+      },
     ];
-  }, [distanceMeters, timeDifferenceMinutes, visit?.capturado_em, visit?.latitude, visit?.longitude]);
+  }, [distanceMeters, isCheckingNetwork, networkRisk, scoreVpn, timeDifferenceMinutes, visit?.capturado_em, visit?.latitude, visit?.longitude, vpnDetected]);
 
   const infoText = useMemo(() => {
+    if (vpnDetected) {
+      return 'A conexao atual tem sinais de VPN/proxy. O administrador deve revisar essa visita com mais cuidado.';
+    }
+
     if (distanceMeters == null) {
       return 'A foto nao trouxe GPS no EXIF. Para validar a presenca com mais seguranca, use uma foto original da camera com localizacao ativa.';
     }
@@ -499,13 +568,13 @@ export default function AvaliadorScreen() {
     }
 
     return 'A foto foi capturada longe da propriedade vinculada. O score caiu para refletir essa divergencia.';
-  }, [distanceMeters]);
+  }, [distanceMeters, vpnDetected]);
 
   useEffect(() => {
     let mounted = true;
 
     async function persistAnalysis() {
-      if (!visit?.id || isLoading || errorMessage) {
+      if (!visit?.id || isLoading || isCheckingNetwork || errorMessage) {
         return;
       }
 
@@ -535,11 +604,11 @@ export default function AvaliadorScreen() {
           classificacao: classification,
           score_distancia: scoreDistance,
           score_exif_timestamp: scoreExifTimestamp,
-          score_ip_regiao: 100,
+          score_ip_regiao: scoreVpn,
           score_deslocamento: distanceMeters != null && distanceMeters <= 200 ? 100 : 55,
-          score_vpn: 100,
+          score_vpn: scoreVpn,
           distancia_calculada_metros: distanceMeters,
-          vpn_detectada: false,
+          vpn_detectada: vpnDetected,
           exif_consistente: visit.latitude != null && visit.longitude != null,
           detalhes: details,
           analisado_em: new Date().toISOString(),
