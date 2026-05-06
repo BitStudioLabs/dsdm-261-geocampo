@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { router, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -13,7 +13,7 @@ import {
   updateProducerProfile,
   uploadProducerAvatar,
 } from '@/features/proprietario/api/proprietario';
-import type { ProducerProfileState } from '@/features/proprietario/types';
+import type { ProducerProfileState, ProprietarioFeedback } from '@/features/proprietario/types';
 import { extractAvatarPath, getAvatarStorageKey } from '@/features/proprietario/utils/avatar';
 import { buildDisplayName, formatMemberSince, getErrorMessage } from '@/features/proprietario/utils/formatting';
 
@@ -36,6 +36,7 @@ export function useProprietarioPerfil() {
   const [photoVisible, setPhotoVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [state, setState] = useState<ProducerProfileState>(EMPTY_STATE);
+  const [feedback, setFeedback] = useState<ProprietarioFeedback>(null);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -54,6 +55,16 @@ export function useProprietarioPerfil() {
   }, [userId]);
 
   useEffect(() => {
+    if (!feedback) return;
+
+    const timeout = setTimeout(() => {
+      setFeedback(null);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [feedback]);
+
+  useEffect(() => {
     let active = true;
 
     async function run() {
@@ -62,6 +73,9 @@ export function useProprietarioPerfil() {
         await loadData();
       } catch (error) {
         console.error('Erro ao carregar perfil do proprietario:', error);
+        if (active) {
+          setFeedback({ type: 'error', message: 'Nao foi possivel carregar os dados do perfil agora.' });
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -88,6 +102,9 @@ export function useProprietarioPerfil() {
           await loadData();
         } catch (error) {
           console.error('Erro ao atualizar perfil do proprietario ao focar:', error);
+          if (active) {
+            setFeedback({ type: 'error', message: 'Nao foi possivel atualizar os dados do perfil.' });
+          }
         } finally {
           if (active) setLoading(false);
         }
@@ -121,6 +138,10 @@ export function useProprietarioPerfil() {
     setRefreshing(true);
     try {
       await Promise.all([refreshProfile(), loadData()]);
+      setFeedback(null);
+    } catch (error) {
+      console.error('Erro ao atualizar perfil do proprietario:', error);
+      setFeedback({ type: 'error', message: 'Nao foi possivel atualizar os dados agora.' });
     } finally {
       setRefreshing(false);
     }
@@ -156,12 +177,13 @@ export function useProprietarioPerfil() {
 
   const saveProfile = useCallback(async () => {
     if (!userId || !editName.trim()) {
-      Alert.alert('Dados invalidos', 'Informe um nome para salvar.');
+      setFeedback({ type: 'error', message: 'Informe um nome para salvar.' });
       return;
     }
 
     try {
       setSaving(true);
+      setFeedback(null);
       await updateProducerProfile({
         userId,
         producerId: state.producer?.id,
@@ -170,9 +192,9 @@ export function useProprietarioPerfil() {
       });
       await Promise.all([refreshProfile(), loadData()]);
       setEditVisible(false);
-      Alert.alert('Perfil atualizado', 'Os dados do proprietario foram salvos com sucesso.');
+      setFeedback({ type: 'success', message: 'Os dados do proprietario foram salvos com sucesso.' });
     } catch (error) {
-      Alert.alert('Erro ao salvar', getErrorMessage(error));
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
     } finally {
       setSaving(false);
     }
@@ -183,7 +205,7 @@ export function useProprietarioPerfil() {
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permissão necessaria', 'Permita acesso a galeria para alterar a foto.');
+      setFeedback({ type: 'error', message: 'Permita acesso a galeria para alterar a foto.' });
       return;
     }
 
@@ -192,14 +214,15 @@ export function useProprietarioPerfil() {
 
     try {
       setUploading(true);
+      setFeedback(null);
       const uploadResult = await uploadProducerAvatar({ userId, asset: result.assets[0] });
       await persistAvatarPath(avatarKey, uploadResult.avatarPath);
       setAvatarUrl(uploadResult.avatarUrl);
       await refreshProfile();
       setPhotoVisible(false);
-      Alert.alert('Foto atualizada', 'A foto do proprietario foi salva com sucesso.');
+      setFeedback({ type: 'success', message: 'A foto do proprietario foi salva com sucesso.' });
     } catch (error) {
-      Alert.alert('Erro ao enviar', getErrorMessage(error));
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
     } finally {
       setUploading(false);
     }
@@ -210,24 +233,25 @@ export function useProprietarioPerfil() {
     const confirmation = confirmPassword.trim();
 
     if (password.length < 8) {
-      Alert.alert('Senha invalida', 'A nova senha precisa ter pelo menos 8 caracteres.');
+      setFeedback({ type: 'error', message: 'A nova senha precisa ter pelo menos 8 caracteres.' });
       return;
     }
 
     if (password !== confirmation) {
-      Alert.alert('Senhas diferentes', 'Confirme a nova senha corretamente.');
+      setFeedback({ type: 'error', message: 'Confirme a nova senha corretamente.' });
       return;
     }
 
     try {
       setSavingPassword(true);
+      setFeedback(null);
       await updateProducerPassword(password);
       setPasswordVisible(false);
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Senha atualizada', 'Sua senha foi alterada com sucesso.');
+      setFeedback({ type: 'success', message: 'Sua senha foi alterada com sucesso.' });
     } catch (error) {
-      Alert.alert('Erro ao alterar senha', getErrorMessage(error));
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
     } finally {
       setSavingPassword(false);
     }
@@ -237,9 +261,8 @@ export function useProprietarioPerfil() {
     const confirmAndLogout = async () => {
       try {
         await logout();
-        router.replace('/login');
       } catch {
-        Alert.alert('Erro ao sair', 'Não foi possivel sair da conta agora.');
+        setFeedback({ type: 'error', message: 'Nao foi possivel sair da conta agora.' });
       }
     };
 
@@ -264,6 +287,7 @@ export function useProprietarioPerfil() {
     editName,
     editPhone,
     editVisible,
+    feedback,
     handleLogout,
     handleRefresh,
     loading,

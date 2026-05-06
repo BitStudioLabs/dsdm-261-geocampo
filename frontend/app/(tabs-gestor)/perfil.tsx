@@ -2,7 +2,6 @@ import { FontAwesome6 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { GestorProfileStar } from '@/features/gestor-perfil/components/GestorProfileStar';
 import { GESTOR_PERFIL_STARS as STARS, GESTOR_PERFIL_THEME as THEME } from '@/features/gestor-perfil/constants';
 import { styles } from '@/features/gestor-perfil/styles';
@@ -331,7 +331,6 @@ export default function PerfilGestorScreen() {
     const confirmAndLogout = async () => {
       try {
         await logout();
-        router.replace('/login');
       } catch (error) {
         console.error('Erro ao sair da conta:', error);
         setFeedback({ message: 'Nao foi possivel sair da conta agora.', type: 'error', scope: 'general' });
@@ -360,6 +359,7 @@ export default function PerfilGestorScreen() {
 
   return (
     <View style={styles.root}>
+      <FeedbackPickup feedback={feedback} />
       <View style={styles.skyBg}>
         {STARS.map((star) => <GestorProfileStar key={star.id} x={star.x} y={star.y} size={star.size} delay={star.delay} />)}
         <View style={styles.moon}>
@@ -424,12 +424,6 @@ export default function PerfilGestorScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
-
-          {feedback?.scope === 'profile' ? (
-            <View style={[styles.feedbackBox, feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>
-              <Text style={styles.feedbackInlineText}>{feedback.message}</Text>
-            </View>
-          ) : null}
 
           <Text style={styles.fieldLabel}>Nome completo</Text>
           <TextInput
@@ -532,12 +526,6 @@ export default function PerfilGestorScreen() {
             <FontAwesome6 name="chevron-right" size={12} color={THEME.textMuted} />
           </TouchableOpacity>
         </View>
-
-        {feedback?.scope === 'general' ? (
-          <View style={[styles.feedbackBox, feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError, styles.feedbackGeneral]}>
-            <Text style={styles.feedbackInlineText}>{feedback.message}</Text>
-          </View>
-        ) : null}
 
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <FontAwesome6 name="arrow-right-from-bracket" size={16} color={THEME.error} />
