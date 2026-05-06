@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { createInstructorVisit, fetchInstructorVisitsData, syncQueuedInstructorVisits } from '@/features/instrutor/api/visitas';
-import type { PropertyOption, SelectedPhoto, VisitHistoryItem } from '@/features/instrutor/types/visitas';
+import type { InstructorVisitsFeedback, PropertyOption, SelectedPhoto, VisitHistoryItem } from '@/features/instrutor/types/visitas';
 import {
   applyDeviceLocationFallback,
   buildSelectedPhoto,
@@ -22,12 +21,25 @@ export function useInstructorVisits() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [feedback, setFeedback] = useState<InstructorVisitsFeedback>(null);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [history, setHistory] = useState<VisitHistoryItem[]>([]);
   const [queuedVisitsCount, setQueuedVisitsCount] = useState(0);
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
   const hasFocusedOnceRef = useRef(false);
+
+  useEffect(() => {
+    if (!feedback) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setFeedback(null);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [feedback]);
 
   const loadVisitasData = useCallback(async () => {
     const currentUserId = profile?.id ?? user?.id;
@@ -151,25 +163,25 @@ export function useInstructorVisits() {
       await loadVisitasData();
 
       if (result.syncedCount > 0 && result.remainingCount === 0) {
-        Alert.alert('Sincronização concluída', 'Todas as visitas offline foram enviadas com sucesso.');
+        setFeedback({ type: 'success', message: 'Todas as visitas offline foram enviadas com sucesso.' });
         return;
       }
 
       if (result.syncedCount > 0) {
-        Alert.alert(
-          'Sincronização parcial',
-          `${result.syncedCount} visita(s) foram sincronizadas. Ainda restam ${result.remainingCount} pendente(s).`
-        );
+        setFeedback({
+          type: 'success',
+          message: `${result.syncedCount} visita(s) foram sincronizadas. Ainda restam ${result.remainingCount} pendente(s).`,
+        });
         return;
       }
 
-      Alert.alert(
-        'Sem conexão estável',
-        'As visitas continuam salvas no aparelho e serão enviadas quando a internet voltar.'
-      );
+      setFeedback({
+        type: 'error',
+        message: 'As visitas continuam salvas no aparelho e serao enviadas quando a internet voltar.',
+      });
     } catch (error) {
       console.error('Erro ao sincronizar visitas offline:', error);
-      Alert.alert('Erro ao sincronizar', getPhotoMetadataErrorMessage(error));
+      setFeedback({ type: 'error', message: getPhotoMetadataErrorMessage(error) });
     } finally {
       setIsSyncingQueue(false);
     }
@@ -180,7 +192,7 @@ export function useInstructorVisits() {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert('Permissão necessária', 'Autorize o acesso à galeria para selecionar a foto da visita.');
+        setFeedback({ type: 'error', message: 'Autorize o acesso a galeria para selecionar a foto da visita.' });
         return;
       }
 
@@ -215,9 +227,10 @@ export function useInstructorVisits() {
       }
 
       setSelectedPhoto(nextPhoto);
+      setFeedback(null);
     } catch (error) {
       console.error('Erro ao selecionar foto da visita:', error);
-      Alert.alert('Erro ao selecionar foto', 'Não foi possível abrir sua galeria agora.');
+      setFeedback({ type: 'error', message: 'Nao foi possivel abrir sua galeria agora.' });
     }
   }, []);
 
@@ -229,18 +242,19 @@ export function useInstructorVisits() {
     const currentUserId = profile?.id ?? user?.id;
 
     if (!currentUserId || !selectedProperty) {
-      Alert.alert('Visita indisponível', 'Selecione uma propriedade antes de continuar.');
+      setFeedback({ type: 'error', message: 'Selecione uma propriedade antes de continuar.' });
       return;
     }
 
     if (!selectedPhoto) {
-      Alert.alert('Foto obrigatória', 'Selecione a foto da visita antes de enviar para análise.');
+      setFeedback({ type: 'error', message: 'Selecione a foto da visita antes de enviar para analise.' });
       return;
     }
 
     try {
       setIsSubmittingVisit(true);
       setErrorMessage('');
+      setFeedback(null);
 
       const result = await createInstructorVisit({
         currentUserId,
@@ -252,10 +266,10 @@ export function useInstructorVisits() {
       setSelectedPhoto(null);
 
       if (result.queuedOffline || !result.visitId) {
-        Alert.alert(
-          'Visita salva offline',
-          'A foto foi guardada no aparelho e será sincronizada automaticamente quando a conexão voltar.'
-        );
+        setFeedback({
+          type: 'success',
+          message: 'A foto foi guardada no aparelho e sera sincronizada automaticamente quando a conexao voltar.',
+        });
         return;
       }
 
@@ -265,7 +279,7 @@ export function useInstructorVisits() {
       } as never);
     } catch (error) {
       console.error('Erro ao registrar visita do instrutor:', error);
-      Alert.alert('Erro ao registrar', getPhotoMetadataErrorMessage(error));
+      setFeedback({ type: 'error', message: getPhotoMetadataErrorMessage(error) });
     } finally {
       setIsSubmittingVisit(false);
     }
@@ -273,6 +287,7 @@ export function useInstructorVisits() {
 
   return {
     errorMessage,
+    feedback,
     handleClearSelectedPhoto,
     handleCreateVisit,
     handlePickImage,

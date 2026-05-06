@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { CADASTRO_PROPRIEDADE_THEME as T } from '@/features/cadastro-propriedade/constants';
 import { formatCoordinateInput, formatCoordinateValue, formatOptionalNumber, isValidEmail, parseNum } from '@/features/cadastro-propriedade/helpers';
 import { cs, fs, mun, rs, ss, stp } from '@/features/cadastro-propriedade/styles';
@@ -288,6 +289,10 @@ export default function CadastroPropriedadeScreen() {
   const sp = (k: keyof PropForm, v: any) => setPf(c => ({ ...c, [k]: v }));
   const so = (k: keyof OwnerForm, v: string) => setOf(c => ({ ...c, [k]: v }));
   const clearErr = (k: string) => setErrors(c => { const n = { ...c }; delete n[k]; return n; });
+  const hasOwnerInfo = useMemo(
+    () => [of.nome, of.email, of.telefone, of.cpfCnpj, of.senha].some((value) => value.trim().length > 0),
+    [of.cpfCnpj, of.email, of.nome, of.senha, of.telefone]
+  );
 
   // Cria cliente auxiliar para signup sem sobrescrever a sessão atual
   const signupClient = useMemo(() => createClient(
@@ -336,6 +341,18 @@ export default function CadastroPropriedadeScreen() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!feedback) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setFeedback(null);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [feedback]);
 
   useEffect(() => {
     if (!isEditMode || !editingPropertyId) {
@@ -437,7 +454,7 @@ export default function CadastroPropriedadeScreen() {
         setOwnerExists(!!loadedProperty.produtores?.usuario_id || !!loadedProperty.produtores?.email);
       } catch (error: any) {
         if (mounted) {
-          setFeedback({ type: 'err', msg: error?.message ?? 'Não foi possivel carregar a propriedade para edição.' });
+          setFeedback({ type: 'error', message: error?.message ?? 'Não foi possivel carregar a propriedade para edicao.' });
         }
       } finally {
         if (mounted) {
@@ -533,7 +550,7 @@ export default function CadastroPropriedadeScreen() {
       if (pf.latitude && isNaN(parseNum(pf.latitude) ?? NaN))  errs.lat = 'Latitude inválida.';
       if (pf.longitude && isNaN(parseNum(pf.longitude) ?? NaN)) errs.lon = 'Longitude inválida.';
     }
-    if (step === 2) {
+    if (step === 2 && hasOwnerInfo) {
       if (!of.nome.trim())     errs.ownerNome  = 'Nome do proprietário é obrigatório.';
       if (!isValidEmail(of.email)) errs.ownerEmail = 'E-mail inválido.';
       if (!ownerExists && !of.senha.trim()) errs.ownerSenha = 'Informe uma senha para criar o acesso.';
@@ -560,103 +577,138 @@ export default function CadastroPropriedadeScreen() {
     if (!validate()) return;
     setSubmitting(true);
     setFeedback(null);
+
     try {
-      // 1. Garante usuário + produtor
-      const ownerEmail = of.email.trim().toLowerCase();
-      let ownerUserId: string;
+      let prodId: number | null = null;
 
-      const { data: existingUser } = await supabase
-        .from('usuarios').select('id, perfil').eq('email', ownerEmail).maybeSingle();
+      if (hasOwnerInfo) {
+        const ownerEmail = of.email.trim().toLowerCase();
+        let ownerUserId: string;
 
-      if (existingUser) {
-        if (existingUser.perfil !== 'proprietario')
-          throw new Error('Já existe um usuário com esse e-mail, mas sem perfil de proprietário.');
-        ownerUserId = existingUser.id;
-        await supabase.from('usuarios').update({
-          nome_completo: of.nome.trim(),
+        const { data: existingUser } = await supabase
+          .from('usuarios')
+          .select('id, perfil')
+          .eq('email', ownerEmail)
+          .maybeSingle();
+
+        if (existingUser) {
+          if (existingUser.perfil !== 'proprietario') {
+            throw new Error('Ja existe um usuario com esse e-mail, mas sem perfil de proprietario.');
+          }
+
+          ownerUserId = existingUser.id;
+
+          const { error: updateUserError } = await supabase
+            .from('usuarios')
+            .update({
+              nome_completo: of.nome.trim(),
+              telefone: of.telefone.trim() || null,
+              atualizado_em: new Date().toISOString(),
+            })
+            .eq('id', ownerUserId);
+
+          if (updateUserError) throw updateUserError;
+        } else {
+          const { data: authData, error: authErr } = await signupClient.auth.signUp({
+            email: ownerEmail,
+            password: of.senha,
+            options: { data: { nome_completo: of.nome.trim(), perfil: 'proprietario' } },
+          });
+
+          if (authErr || !authData.user) {
+            throw new Error(authErr?.message ?? 'Erro ao criar login.');
+          }
+
+          ownerUserId = authData.user.id;
+
+          const { error: profileError } = await supabase.from('usuarios').insert({
+            id: ownerUserId,
+            email: ownerEmail,
+            perfil: 'proprietario',
+            nome_completo: of.nome.trim(),
+            telefone: of.telefone.trim() || null,
+            id_regional: pf.regiao?.id ?? null,
+            ativo: true,
+          });
+
+          if (profileError) throw profileError;
+        }
+
+        const { data: existingProd } = await supabase
+          .from('produtores')
+          .select('id')
+          .eq('usuario_id', ownerUserId)
+          .maybeSingle();
+
+        const prodPayload = {
+          nome: of.nome.trim(),
+          cpf_cnpj: of.cpfCnpj.trim() || null,
           telefone: of.telefone.trim() || null,
-          atualizado_em: new Date().toISOString(),
-        }).eq('id', ownerUserId);
-      } else {
-        const { data: authData, error: authErr } = await signupClient.auth.signUp({
           email: ownerEmail,
-          password: of.senha,
-          options: { data: { nome_completo: of.nome.trim(), perfil: 'proprietario' } },
-        });
-        if (authErr || !authData.user) throw new Error(authErr?.message ?? 'Erro ao criar login.');
-        ownerUserId = authData.user.id;
-        const { error: profErr } = await supabase.from('usuarios').insert({
-          id: ownerUserId, email: ownerEmail, perfil: 'proprietario',
-          nome_completo: of.nome.trim(),
-          telefone: of.telefone.trim() || null,
-          id_regional: pf.regiao?.id ?? null,
-          ativo: true,
-        });
-        if (profErr) throw profErr;
+          usuario_id: ownerUserId,
+          atualizado_em: new Date().toISOString(),
+        };
+
+        if (existingProd) {
+          const { error: updateProdError } = await supabase
+            .from('produtores')
+            .update(prodPayload)
+            .eq('id', existingProd.id);
+
+          if (updateProdError) throw updateProdError;
+          prodId = existingProd.id;
+        } else {
+          const { data: newProd, error: prodErr } = await supabase
+            .from('produtores')
+            .insert(prodPayload)
+            .select('id')
+            .single();
+
+          if (prodErr || !newProd) {
+            throw prodErr ?? new Error('Erro ao criar produtor.');
+          }
+
+          prodId = newProd.id;
+        }
       }
 
-      // Upsert produtor
-      const { data: existingProd } = await supabase
-        .from('produtores').select('id').eq('usuario_id', ownerUserId).maybeSingle();
-
-      let prodId: number;
-      const prodPayload = {
-        nome: of.nome.trim(),
-        cpf_cnpj: of.cpfCnpj.trim() || null,
-        telefone: of.telefone.trim() || null,
-        email: ownerEmail,
-        usuario_id: ownerUserId,
-        atualizado_em: new Date().toISOString(),
-      };
-
-      if (existingProd) {
-        await supabase.from('produtores').update(prodPayload).eq('id', existingProd.id);
-        prodId = existingProd.id;
-      } else {
-        const { data: newProd, error: prodErr } = await supabase
-          .from('produtores').insert(prodPayload).select('id').single();
-        if (prodErr || !newProd) throw prodErr ?? new Error('Erro ao criar produtor.');
-        prodId = newProd.id;
-      }
-
-      // 2. Salva propriedade
       const numAreas = (field: string) => parseNum(field) ?? null;
       const propertyPayload = {
-        nome:                  pf.nome.trim(),
-        imovel:                pf.imovel.trim()        || null,
-        car:                   pf.car.trim()            || null,
-        inscricao_incra:       pf.inscricaoIncra.trim() || null,
-        dap:                   pf.dap.trim()            || null,
-        id_municipio:          pf.municipio?.id         ?? null,
-        municipio_nome:        pf.municipio?.nome       ?? null,
-        uf:                    pf.municipio?.uf ?? pf.uf.toUpperCase(),
-        id_regional:           pf.regiao?.id            ?? null,
-        bairro:                pf.bairro.trim()         || null,
-        logradouro:            pf.logradouro.trim()     || null,
-        numero:                pf.numero.trim()         || null,
-        complemento:           pf.complemento.trim()   || null,
-        cep:                   pf.cep.trim()            || null,
-        referencia:            pf.referencia.trim()     || null,
-        como_chegar:           pf.comoChegar.trim()    || null,
-        latitude:              parseNum(pf.latitude),
-        longitude:             parseNum(pf.longitude),
-        area_total:            numAreas(pf.areaTotal),
-        area_atividades_prod:  numAreas(pf.areaAtividades),
-        area_pecuaria:         numAreas(pf.areaPecuaria),
+        nome: pf.nome.trim(),
+        imovel: pf.imovel.trim() || null,
+        car: pf.car.trim() || null,
+        inscricao_incra: pf.inscricaoIncra.trim() || null,
+        dap: pf.dap.trim() || null,
+        id_municipio: pf.municipio?.id ?? null,
+        municipio_nome: pf.municipio?.nome ?? null,
+        uf: pf.municipio?.uf ?? pf.uf.toUpperCase(),
+        id_regional: pf.regiao?.id ?? null,
+        bairro: pf.bairro.trim() || null,
+        logradouro: pf.logradouro.trim() || null,
+        numero: pf.numero.trim() || null,
+        complemento: pf.complemento.trim() || null,
+        cep: pf.cep.trim() || null,
+        referencia: pf.referencia.trim() || null,
+        como_chegar: pf.comoChegar.trim() || null,
+        latitude: parseNum(pf.latitude),
+        longitude: parseNum(pf.longitude),
+        area_total: numAreas(pf.areaTotal),
+        area_atividades_prod: numAreas(pf.areaAtividades),
+        area_pecuaria: numAreas(pf.areaPecuaria),
         area_preservacao_perm: numAreas(pf.areaPreservacao),
-        area_reserva_legal:    numAreas(pf.areaReserva),
+        area_reserva_legal: numAreas(pf.areaReserva),
         area_vegetacao_nativa: numAreas(pf.areaVegetacao),
-        area_acudes_represas:  numAreas(pf.areaAcudes),
-        area_benfeitorias:     numAreas(pf.areaBenfeitorias),
-        area_estradas:         numAreas(pf.areaEstradas),
-        area_graos_cereais:    numAreas(pf.areaGraos),
-        area_nao_agricola:     numAreas(pf.areaNaoAgricola),
-        valor_terra_nua:       numAreas(pf.valorTerraNua),
-        status_propriedade:    pf.statusProp,
-        status_arrendamento:   pf.statusArr,
-        telefone:              pf.telefone.trim() || null,
-        id_produtor:           prodId,
-        atualizado_em:         new Date().toISOString(),
+        area_acudes_represas: numAreas(pf.areaAcudes),
+        area_benfeitorias: numAreas(pf.areaBenfeitorias),
+        area_estradas: numAreas(pf.areaEstradas),
+        area_graos_cereais: numAreas(pf.areaGraos),
+        area_nao_agricola: numAreas(pf.areaNaoAgricola),
+        valor_terra_nua: numAreas(pf.valorTerraNua),
+        status_propriedade: pf.statusProp,
+        status_arrendamento: pf.statusArr,
+        telefone: pf.telefone.trim() || null,
+        id_produtor: prodId,
+        atualizado_em: new Date().toISOString(),
       };
 
       const propQuery = isEditMode && editingPropertyId
@@ -668,21 +720,31 @@ export default function CadastroPropriedadeScreen() {
       if (propErr) throw propErr;
 
       if (isEditMode) {
-        setFeedback({ type: 'ok', msg: 'Propriedade atualizada com sucesso!' });
+        setFeedback({ type: 'success', message: 'Propriedade atualizada com sucesso!' });
       } else {
-        setPf(PROP0); setOf(OWNER0); setStep(0); setOwnerExists(null);
-        setFeedback({ type: 'ok', msg: 'Propriedade cadastrada com sucesso!' });
+        setPf(PROP0);
+        setOf(OWNER0);
+        setOwnerSearch('');
+        setOwnerOptions([]);
+        setStep(0);
+        setOwnerExists(null);
+        setFeedback({ type: 'success', message: 'Propriedade cadastrada com sucesso!' });
       }
     } catch (e: any) {
-      setFeedback({ type: 'err', msg: e?.message ?? `Erro ao ${isEditMode ? 'atualizar' : 'cadastrar'}. Tente novamente.` });
+      setFeedback({
+        type: 'error',
+        message: e?.message ?? `Erro ao ${isEditMode ? 'atualizar' : 'cadastrar'}. Tente novamente.`,
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <View style={rs.root}>
+      <FeedbackPickup feedback={feedback} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -920,7 +982,7 @@ export default function CadastroPropriedadeScreen() {
                 )}
 
                 <Field
-                  label="Nome completo *"
+                  label="Nome completo"
                   value={of.nome}
                   onChange={v => { so('nome', v); clearErr('ownerNome'); }}
                   placeholder="Nome do proprietário"
@@ -928,7 +990,7 @@ export default function CadastroPropriedadeScreen() {
                 />
                 <View>
                   <Field
-                    label="E-mail *"
+                    label="E-mail"
                     value={of.email}
                     onChange={v => { handleOwnerEmail(v); clearErr('ownerEmail'); }}
                     placeholder="proprietario@email.com"
@@ -956,9 +1018,9 @@ export default function CadastroPropriedadeScreen() {
                 </View>
 
                 {/* Senha: só exibe se for usuário novo ou ainda não verificado */}
-                {ownerExists === false && (
+                {hasOwnerInfo && ownerExists === false && (
                   <Field
-                    label="Senha inicial *"
+                    label="Senha inicial"
                     value={of.senha}
                     onChange={v => { so('senha', v); clearErr('ownerSenha'); }}
                     placeholder="Mínimo 8 caracteres"
@@ -969,19 +1031,6 @@ export default function CadastroPropriedadeScreen() {
                 )}
               </Section>
 
-              {/* Feedback */}
-              {feedback && (
-                <View style={[rs.feedback, feedback.type === 'ok' ? rs.feedbackOk : rs.feedbackErr]}>
-                  <FontAwesome6
-                    name={feedback.type === 'ok' ? 'circle-check' : 'circle-exclamation'}
-                    size={14}
-                    color={feedback.type === 'ok' ? T.green : T.red}
-                  />
-                  <Text style={[rs.feedbackText, { color: feedback.type === 'ok' ? T.green : T.red }]}>
-                    {feedback.msg}
-                  </Text>
-                </View>
-              )}
             </View>
           )}
 

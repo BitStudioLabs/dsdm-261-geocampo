@@ -36,6 +36,11 @@ export type ProducerProfileState = {
   visitsCount: number;
 };
 
+export type ProprietarioFeedback = {
+  type: 'success' | 'error';
+  message: string;
+} | null;
+
 export type AssignmentRow = {
   id_propriedade: number | null;
   id_instrutor: string | null;

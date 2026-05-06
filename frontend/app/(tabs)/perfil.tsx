@@ -25,6 +25,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { SectionCard } from '@/features/instrutor/components/SectionCard';
 import { useInstructorProfile } from '@/features/instrutor/hooks/useInstructorProfile';
 import { colors } from '@/src/theme/colors';
@@ -164,6 +165,7 @@ export default function PerfilScreen() {
     editName,
     editPhone,
     editVisible,
+    feedback,
     handleLogout,
     handlePickPhoto,
     handleRefresh,
@@ -190,7 +192,7 @@ export default function PerfilScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.page} />
-      
+      <FeedbackPickup feedback={feedback} />
 
       <ScrollView
         contentContainerStyle={styles.content}

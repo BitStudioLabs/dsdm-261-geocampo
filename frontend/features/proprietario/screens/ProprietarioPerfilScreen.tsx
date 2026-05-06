@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { InfoRow } from '@/features/proprietario/components/InfoRow';
 import { ProprietarioStatCard } from '@/features/proprietario/components/ProprietarioStatCard';
 import { useProprietarioPerfil } from '@/features/proprietario/hooks/useProprietarioPerfil';
@@ -34,6 +35,7 @@ export default function PerfilProprietarioScreen() {
     editName,
     editPhone,
     editVisible,
+    feedback,
     handleLogout,
     handleRefresh,
     loading,
@@ -64,6 +66,7 @@ export default function PerfilProprietarioScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.page} />
+      <FeedbackPickup feedback={feedback} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.primary} />}

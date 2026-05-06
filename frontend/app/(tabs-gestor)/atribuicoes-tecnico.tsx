@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { ATRIBUICOES_PAGE_SIZE_OPTIONS, ATRIBUICOES_TECNICO_THEME as THEME } from '@/features/atribuicoes-tecnico/constants';
 import { styles } from '@/features/atribuicoes-tecnico/styles';
 import type { AtribuicaoRow, AtribuicoesFeedback, InstrutorOption, PropriedadeOption } from '@/features/atribuicoes-tecnico/types';
@@ -367,6 +368,7 @@ export default function AtribuicoesTecnicoScreen() {
 
   return (
     <View style={styles.root}>
+      <FeedbackPickup feedback={feedback} />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -636,12 +638,6 @@ export default function AtribuicoesTecnicoScreen() {
                 activeOpacity={0.85}>
                 <Text style={[styles.pageNavText, propriedadesPage === propriedadesTotalPages && styles.pageNavTextDisabled]}>Ultima</Text>
               </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {feedback ? (
-            <View style={[styles.feedbackBox, feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>
-              <Text style={styles.feedbackText}>{feedback.message}</Text>
             </View>
           ) : null}
 
