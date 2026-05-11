@@ -7,6 +7,8 @@ import type {
   InstructorRisk,
   InstructorScoreRow,
   VisitAuditDetailRow,
+  VisitPhoto,
+  VisitPhotoRow,
 } from './types';
 
 export function getSeverityColor(severity: AuditSeverity) {
@@ -94,6 +96,10 @@ function formatDateTime(value?: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(parsed);
+}
+
+export function formatAuditDateTime(value?: string | null) {
+  return formatDateTime(value);
 }
 
 function formatTime(value?: string | null) {
@@ -261,5 +267,19 @@ export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow
         severity: vpnDetected ? 'critical' : scoreSeverity(analysis?.score_vpn),
       },
     ],
+    photos: [],
+  };
+}
+
+export function mapVisitPhoto(row: VisitPhotoRow, signedUrl?: string | null): VisitPhoto {
+  return {
+    id: row.id,
+    uri: row.url_publica || signedUrl || null,
+    fileName: row.nome_arquivo ?? 'Foto da visita',
+    sentAt: formatDateTime(row.enviada_em),
+    hasGps: row.exif_tem_gps ?? false,
+    distanceMeters: parseOptionalNumber(row.distancia_propriedade_metros),
+    latitude: row.exif_latitude,
+    longitude: row.exif_longitude,
   };
 }

@@ -2,6 +2,7 @@ import { FontAwesome6 } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   RefreshControl,
   ScrollView,
   Text,
@@ -126,7 +127,7 @@ export default function AuditoriaScreen() {
             <Text style={styles.eyebrow}>Auditoria antifraude</Text>
             <Text style={styles.title}>Autenticidade da geolocalização</Text>
             <Text style={styles.subtitle}>
-              Dados da `vw_alertas_fraude` e da `analises_antifraude`, avaliando distância, IP/região, deslocamento e VPN.
+              Análise das visitas técnicas por distância da propriedade, coerência regional, deslocamento e sinais de VPN.
             </Text>
           </View>
           <View style={styles.headerIcon}>
@@ -385,6 +386,39 @@ export default function AuditoriaScreen() {
                 <Text style={styles.evidenceLabel}>VPN</Text>
                 <Text style={styles.evidenceValue}>{selectedAuditCase.vpnSignal}</Text>
               </View>
+            </View>
+
+            <View style={styles.photosBlock}>
+              <View style={styles.pythonAuditHeader}>
+                <FontAwesome6 name="images" size={14} color={THEME.blue} />
+                <Text style={styles.pythonAuditTitle}>Fotos registradas na visita</Text>
+              </View>
+
+              {selectedAuditCase.photos.length === 0 ? (
+                <View style={styles.inlineState}>
+                  <FontAwesome6 name="image" size={15} color={THEME.textMuted} />
+                  <Text style={styles.stateText}>Nenhuma foto encontrada para esta visita.</Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoList}>
+                  {selectedAuditCase.photos.map((photo) => (
+                    <View key={photo.id} style={styles.photoCard}>
+                      {photo.uri ? (
+                        <Image source={{ uri: photo.uri }} style={styles.visitPhoto} resizeMode="cover" />
+                      ) : (
+                        <View style={styles.photoMissing}>
+                          <FontAwesome6 name="image" size={20} color={THEME.textMuted} />
+                        </View>
+                      )}
+                      <Text style={styles.photoName} numberOfLines={1}>{photo.fileName}</Text>
+                      <Text style={styles.photoMeta}>{photo.sentAt}</Text>
+                      <Text style={styles.photoMeta}>
+                        GPS {photo.hasGps ? 'presente' : 'ausente'} • {photo.distanceMeters == null ? 'sem distância' : formatDistance(photo.distanceMeters)}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
             </View>
 
             <View style={styles.indicatorGrid}>

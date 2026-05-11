@@ -1,7 +1,16 @@
 import { supabase } from '@/src/lib/supabase';
 
-import { buildAuditCase, mapInstructorRisk } from './helpers';
-import type { AuditCase, AuditSummary, FraudAlertRow, FraudAnalysisRow, InstructorScoreRow, VisitAuditDetailRow } from './types';
+import { buildAuditCase, mapInstructorRisk, mapVisitPhoto } from './helpers';
+import type {
+  AuditCase,
+  AuditSummary,
+  FraudAlertRow,
+  FraudAnalysisRow,
+  InstructorScoreRow,
+  VisitAuditDetailRow,
+  VisitPhoto,
+  VisitPhotoRow,
+} from './types';
 
 const ALERT_SELECT =
   'alerta_id, analisado_em, score_total, classificacao, vpn_detectada, distancia_calculada_metros, visita_id, codigo_rastreamento, dt_visita, status_visita, propriedade_id, propriedade_nome, municipio_nome, uf, instrutor_nome, instrutor_id, regional_nome, projeto_nome';
@@ -12,11 +21,52 @@ const ANALYSIS_SELECT =
 const VISIT_SELECT =
   'id, dt_checkin, dt_checkout, tempo_visita_minutos, latitude_checkin, longitude_checkin, latitude_checkout, longitude_checkout, distancia_metros, tipo_visita, status_visita, observacoes, propriedades(latitude, longitude), produtores(nome)';
 
+const PHOTO_SELECT =
+  'id, id_visita, storage_path, url_publica, nome_arquivo, exif_tem_gps, exif_latitude, exif_longitude, distancia_propriedade_metros, enviada_em';
+
+async function fetchPhotosByVisitIds(visitIds: number[]) {
+  if (visitIds.length === 0) {
+    return new Map<number, VisitPhoto[]>();
+  }
+
+  const photosRes = await supabase
+    .from('fotos_visita')
+    .select(PHOTO_SELECT)
+    .in('id_visita', visitIds)
+    .order('enviada_em', { ascending: true });
+
+  if (photosRes.error) throw photosRes.error;
+
+  const rows = (photosRes.data ?? []) as VisitPhotoRow[];
+  const signedUrlEntries = await Promise.all(
+    rows.map(async (row) => {
+      if (row.url_publica || !row.storage_path) {
+        return [row.id, null] as const;
+      }
+
+      const { data } = await supabase.storage.from('fotos-visitas').createSignedUrl(row.storage_path, 60 * 60);
+      return [row.id, data?.signedUrl ?? null] as const;
+    })
+  );
+  const signedUrlByPhotoId = new Map(signedUrlEntries);
+  const photosByVisitId = new Map<number, VisitPhoto[]>();
+
+  rows.forEach((row) => {
+    const photo = mapVisitPhoto(row, signedUrlByPhotoId.get(row.id));
+    const currentPhotos = photosByVisitId.get(row.id_visita) ?? [];
+    currentPhotos.push(photo);
+    photosByVisitId.set(row.id_visita, currentPhotos);
+  });
+
+  return photosByVisitId;
+}
+
 export async function fetchAuditCasesByAlerts(alertRows: FraudAlertRow[]) {
   const alertIds = alertRows.map((alert) => alert.alerta_id);
   const visitIds = alertRows.map((alert) => alert.visita_id);
   let analysesById = new Map<number, FraudAnalysisRow>();
   let visitDetailsById = new Map<number, VisitAuditDetailRow>();
+  let photosByVisitId = new Map<number, VisitPhoto[]>();
 
   if (alertIds.length > 0) {
     const analysesRes = await supabase.from('analises_antifraude').select(ANALYSIS_SELECT).in('id', alertIds);
@@ -32,9 +82,13 @@ export async function fetchAuditCasesByAlerts(alertRows: FraudAlertRow[]) {
     if (visitsRes.error) throw visitsRes.error;
 
     visitDetailsById = new Map(((visitsRes.data ?? []) as VisitAuditDetailRow[]).map((visit) => [visit.id, visit]));
+    photosByVisitId = await fetchPhotosByVisitIds(visitIds);
   }
 
-  return alertRows.map((alert) => buildAuditCase(alert, analysesById.get(alert.alerta_id), visitDetailsById.get(alert.visita_id)));
+  return alertRows.map((alert) => ({
+    ...buildAuditCase(alert, analysesById.get(alert.alerta_id), visitDetailsById.get(alert.visita_id)),
+    photos: photosByVisitId.get(alert.visita_id) ?? [],
+  }));
 }
 
 export async function fetchInstructorAuditCases(instructorId: string) {

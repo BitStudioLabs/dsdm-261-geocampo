@@ -41,6 +41,18 @@ export type AuditCase = {
   riskScore: number;
   classification: Classification;
   indicators: AuditIndicator[];
+  photos: VisitPhoto[];
+};
+
+export type VisitPhoto = {
+  id: string;
+  uri: string | null;
+  fileName: string;
+  sentAt: string;
+  hasGps: boolean;
+  distanceMeters: number | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
 };
 
 export type VisitAuditDetailRow = {
@@ -74,6 +86,19 @@ export type VisitAuditDetailRow = {
         nome: string | null;
       }[]
     | null;
+};
+
+export type VisitPhotoRow = {
+  id: string;
+  id_visita: number;
+  storage_path: string;
+  url_publica: string | null;
+  nome_arquivo: string | null;
+  exif_tem_gps: boolean | null;
+  exif_latitude: number | string | null;
+  exif_longitude: number | string | null;
+  distancia_propriedade_metros: number | string | null;
+  enviada_em: string | null;
 };
 
 export type FraudAlertRow = {
