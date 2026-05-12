@@ -179,5 +179,5 @@ export async function fetchNetworkRisk(): Promise<NetworkRiskResult> {
     errors.push(`ipwho.is: ${message}`);
   }
 
-  return unavailable(errors.join(' | ') || 'Nao foi possivel consultar o IP publico.');
+  return unavailable(errors.join(' | ') || 'Não foi possivel consultar o IP publico.');
 }

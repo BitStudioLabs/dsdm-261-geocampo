@@ -6,6 +6,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -33,6 +34,11 @@ export default function AuditoriaScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [instructorErrorMessage, setInstructorErrorMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [classificationFilter, setClassificationFilter] = useState<'all' | 'alto_risco_vpn' | 'suspeita' | 'valida'>('all');
+  const [sortBy, setSortBy] = useState<'risk' | 'distance'>('risk');
+  const [selectedDetailTab, setSelectedDetailTab] = useState<'overview' | 'operacao' | 'fotos' | 'indicadores'>('overview');
+  const [reviewedCaseIds, setReviewedCaseIds] = useState<string[]>([]);
 
   const loadAuditData = useCallback(async (refreshing = false) => {
     if (refreshing) {
@@ -94,6 +100,18 @@ export default function AuditoriaScreen() {
     loadAuditData();
   }, [loadAuditData]);
 
+  const onRefresh = useCallback(() => {
+    loadAuditData(true);
+  }, [loadAuditData]);
+
+  const hasEmptyState = !isLoading && !errorMessage && auditCases.length === 0;
+  const visibleAuditCases = selectedInstructor ? selectedInstructorCases : auditCases;
+
+  const missingGpsPhotosCount = useMemo(
+    () => visibleAuditCases.reduce((total, auditCase) => total + auditCase.photos.filter((photo) => !photo.hasGps).length, 0),
+    [visibleAuditCases]
+  );
+
   const summary = useMemo(() => {
     const averageDistance =
       auditCases.length > 0
@@ -105,15 +123,51 @@ export default function AuditoriaScreen() {
       { id: 'medium', label: 'Suspeitas', value: String(auditSummary.mediumRisk), icon: 'circle-info' as const, color: THEME.gold },
       { id: 'clean', label: 'Válidas', value: String(auditSummary.clean), icon: 'circle-check' as const, color: THEME.leafLight },
       { id: 'distance', label: 'Distância média', value: formatDistance(averageDistance), icon: 'location-dot' as const, color: THEME.blue },
+      { id: 'gps', label: 'Fotos sem GPS', value: String(missingGpsPhotosCount), icon: 'image-slash' as const, color: THEME.error },
     ];
-  }, [auditCases, auditSummary.clean, auditSummary.highRisk, auditSummary.mediumRisk]);
+  }, [auditCases, auditSummary.clean, auditSummary.highRisk, auditSummary.mediumRisk, missingGpsPhotosCount]);
 
-  const onRefresh = useCallback(() => {
-    loadAuditData(true);
-  }, [loadAuditData]);
+  const filteredAuditCases = useMemo(() => {
+    return visibleAuditCases
+      .filter((item) => {
+        if (classificationFilter !== 'all' && item.classification !== classificationFilter) {
+          return false;
+        }
 
-  const hasEmptyState = !isLoading && !errorMessage && auditCases.length === 0;
-  const visibleAuditCases = selectedInstructor ? selectedInstructorCases : auditCases;
+        const term = searchTerm.trim().toLowerCase();
+        if (!term) {
+          return true;
+        }
+
+        return (
+          item.property.toLowerCase().includes(term) ||
+          item.technician.toLowerCase().includes(term) ||
+          item.trackingCode.toLowerCase().includes(term) ||
+          item.project.toLowerCase().includes(term)
+        );
+      })
+      .sort((a, b) => {
+        if (sortBy === 'distance') {
+          return b.photoDistanceMeters - a.photoDistanceMeters;
+        }
+
+        return b.riskScore - a.riskScore;
+      });
+  }, [visibleAuditCases, classificationFilter, searchTerm, sortBy]);
+
+  const selectedAuditReviewed = selectedAuditCase ? reviewedCaseIds.includes(selectedAuditCase.id) : false;
+
+  const getRecommendedAction = useCallback((auditCase: AuditCase) => {
+    if (auditCase.riskScore < 60) {
+      return 'Revisar fotos, GPS e coordenadas';
+    }
+
+    if (auditCase.riskScore < 80) {
+      return 'Confirmar deslocamento e evidências';
+    }
+
+    return 'Validar visita e encerrar análise';
+  }, []);
 
   return (
     <View style={styles.root}>
@@ -135,17 +189,25 @@ export default function AuditoriaScreen() {
           </View>
         </View>
 
-        <View style={[styles.summaryGrid, isWideLayout && styles.summaryGridWide]}>
+<ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.summaryRow}
+          style={styles.summaryScroll}>
           {summary.map((item) => (
-            <View key={item.id} style={[styles.summaryCard, isWideLayout && styles.summaryCardWide]}>
-              <View style={[styles.summaryIcon, { backgroundColor: `${item.color}20` }]}>
-                <FontAwesome6 name={item.icon} size={15} color={item.color} />
+            <View key={item.id} style={styles.summaryCard}>
+              <View style={styles.summaryCardTop}>
+                <View style={[styles.summaryIcon, { backgroundColor: `${item.color}20` }]}> 
+                  <FontAwesome6 name={item.icon} size={15} color={item.color} />
+                </View>
+                <View style={styles.summaryTextGroup}>
+                  <Text style={styles.summaryValueCompact}>{isLoading ? '--' : item.value}</Text>
+                  <Text style={styles.summaryLabelCompact}>{item.label}</Text>
+                </View>
               </View>
-              <Text style={styles.summaryValue}>{isLoading ? '--' : item.value}</Text>
-              <Text style={styles.summaryLabel}>{item.label}</Text>
             </View>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Instrutores sob atenção</Text>
@@ -290,6 +352,24 @@ export default function AuditoriaScreen() {
               </TouchableOpacity>
             </View>
 
+            <View style={styles.detailTabs}>
+              {[
+                { key: 'overview', label: 'Resumo' },
+                { key: 'operacao', label: 'Operação' },
+                { key: 'fotos', label: 'Fotos' },
+                { key: 'indicadores', label: 'Indicadores' },
+              ].map((tab) => (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[styles.tabButton, selectedDetailTab === tab.key && styles.tabButtonActive]}
+                  onPress={() => setSelectedDetailTab(tab.key as typeof selectedDetailTab)}
+                  activeOpacity={0.85}>
+                  <Text style={[styles.tabButtonText, selectedDetailTab === tab.key && styles.tabButtonTextActive]}>{tab.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {selectedDetailTab === 'overview' ? (
               <View style={styles.detailGrid}>
                 <View style={styles.detailItem}>
                   <Text style={styles.evidenceLabel}>Instrutor</Text>
@@ -311,140 +391,216 @@ export default function AuditoriaScreen() {
                   <Text style={styles.evidenceLabel}>Data da visita</Text>
                   <Text style={styles.evidenceValue}>{selectedAuditCase.visitDate}</Text>
                 </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.evidenceLabel}>Analisado em</Text>
-                <Text style={styles.evidenceValue}>{selectedAuditCase.analyzedAt}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.evidenceLabel}>Status</Text>
-                <Text style={styles.evidenceValue}>{selectedAuditCase.status}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.evidenceLabel}>Score</Text>
-                <Text style={styles.evidenceValue}>{selectedAuditCase.riskScore}/100 • {getRiskLabel(selectedAuditCase.riskScore)}</Text>
-              </View>
-            </View>
-
-            <View style={styles.pythonAuditBlock}>
-              <View style={styles.pythonAuditHeader}>
-                <FontAwesome6 name="route" size={14} color={THEME.leafLight} />
-                <Text style={styles.pythonAuditTitle}>Conferência operacional da visita</Text>
-              </View>
-              <View style={styles.detailGrid}>
                 <View style={styles.detailItem}>
-                  <Text style={styles.evidenceLabel}>Horário check-in</Text>
-                  <Text style={styles.evidenceValue}>{selectedAuditCase.checkinAt}</Text>
+                  <Text style={styles.evidenceLabel}>Analisado em</Text>
+                  <Text style={styles.evidenceValue}>{selectedAuditCase.analyzedAt}</Text>
                 </View>
                 <View style={styles.detailItem}>
-                  <Text style={styles.evidenceLabel}>Horário check-out</Text>
-                  <Text style={styles.evidenceValue}>{selectedAuditCase.checkoutAt}</Text>
+                  <Text style={styles.evidenceLabel}>Status</Text>
+                  <Text style={styles.evidenceValue}>{selectedAuditCase.status}</Text>
                 </View>
                 <View style={styles.detailItem}>
-                  <Text style={styles.evidenceLabel}>Tempo da visita</Text>
-                  <Text style={styles.evidenceValue}>
-                    {selectedAuditCase.durationMinutes == null ? 'Não informado' : `${selectedAuditCase.durationMinutes} min`}
-                  </Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.evidenceLabel}>Check-in x check-out</Text>
-                  <Text style={styles.evidenceValue}>
-                    {selectedAuditCase.checkinCheckoutMeters == null ? 'Sem coordenadas' : formatDistance(selectedAuditCase.checkinCheckoutMeters)}
-                  </Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.evidenceLabel}>Check-in x sede</Text>
-                  <Text style={styles.evidenceValue}>
-                    {selectedAuditCase.checkinPropertyMeters == null ? 'Sem coordenadas' : formatDistance(selectedAuditCase.checkinPropertyMeters)}
-                  </Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.evidenceLabel}>Coordenada check-in</Text>
-                  <Text style={styles.evidenceValue}>{selectedAuditCase.checkinCoordinate}</Text>
+                  <Text style={styles.evidenceLabel}>Score</Text>
+                  <Text style={styles.evidenceValue}>{selectedAuditCase.riskScore}/100 • {getRiskLabel(selectedAuditCase.riskScore)}</Text>
                 </View>
               </View>
-            </View>
+            ) : null}
 
-            <View style={styles.evidenceRow}>
-              <View style={styles.evidenceItem}>
-                <Text style={styles.evidenceLabel}>Foto x propriedade</Text>
-                <Text style={styles.evidenceValue}>{formatDistance(selectedAuditCase.photoDistanceMeters)}</Text>
-              </View>
-              <View style={styles.evidenceItem}>
-                <Text style={styles.evidenceLabel}>IP / propriedade</Text>
-                <Text style={styles.evidenceValue}>
-                  {selectedAuditCase.ipRegion} / {selectedAuditCase.propertyRegion}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.evidenceRow}>
-              <View style={styles.evidenceItem}>
-                <Text style={styles.evidenceLabel}>Deslocamento</Text>
-                <Text style={styles.evidenceValue}>{selectedAuditCase.displacement}</Text>
-              </View>
-              <View style={styles.evidenceItem}>
-                <Text style={styles.evidenceLabel}>VPN</Text>
-                <Text style={styles.evidenceValue}>{selectedAuditCase.vpnSignal}</Text>
-              </View>
-            </View>
-
-            <View style={styles.photosBlock}>
-              <View style={styles.pythonAuditHeader}>
-                <FontAwesome6 name="images" size={14} color={THEME.blue} />
-                <Text style={styles.pythonAuditTitle}>Fotos registradas na visita</Text>
-              </View>
-
-              {selectedAuditCase.photos.length === 0 ? (
-                <View style={styles.inlineState}>
-                  <FontAwesome6 name="image" size={15} color={THEME.textMuted} />
-                  <Text style={styles.stateText}>Nenhuma foto encontrada para esta visita.</Text>
+            {selectedDetailTab === 'operacao' ? (
+              <View style={styles.pythonAuditBlock}>
+                <View style={styles.pythonAuditHeader}>
+                  <FontAwesome6 name="route" size={14} color={THEME.leafLight} />
+                  <Text style={styles.pythonAuditTitle}>Conferência operacional da visita</Text>
                 </View>
-              ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoList}>
-                  {selectedAuditCase.photos.map((photo) => (
-                    <View key={photo.id} style={styles.photoCard}>
-                      {photo.uri ? (
-                        <Image source={{ uri: photo.uri }} style={styles.visitPhoto} resizeMode="cover" />
-                      ) : (
-                        <View style={styles.photoMissing}>
-                          <FontAwesome6 name="image" size={20} color={THEME.textMuted} />
-                        </View>
-                      )}
-                      <Text style={styles.photoName} numberOfLines={1}>{photo.fileName}</Text>
-                      <Text style={styles.photoMeta}>{photo.sentAt}</Text>
-                      <Text style={styles.photoMeta}>
-                        GPS {photo.hasGps ? 'presente' : 'ausente'} • {photo.distanceMeters == null ? 'sem distância' : formatDistance(photo.distanceMeters)}
-                      </Text>
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-
-            <View style={styles.indicatorGrid}>
-              {selectedAuditCase.indicators.map((indicator) => {
-                const indicatorColor = getSeverityColor(indicator.severity);
-
-                return (
-                  <View key={indicator.id} style={styles.indicatorCard}>
-                    <View style={styles.indicatorTop}>
-                      <View style={[styles.indicatorIcon, { backgroundColor: `${indicatorColor}1f` }]}>
-                        <FontAwesome6 name={indicator.icon} size={13} color={indicatorColor} />
-                      </View>
-                      <Text style={[styles.indicatorValue, { color: indicatorColor }]}>{indicator.value}</Text>
-                    </View>
-                    <Text style={styles.indicatorLabel}>{indicator.label}</Text>
-                    <Text style={styles.indicatorDetail}>{indicator.detail}</Text>
+                <View style={styles.detailGrid}>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.evidenceLabel}>Horário check-in</Text>
+                    <Text style={styles.evidenceValue}>{selectedAuditCase.checkinAt}</Text>
                   </View>
-                );
-              })}
+                  <View style={styles.detailItem}>
+                    <Text style={styles.evidenceLabel}>Horário check-out</Text>
+                    <Text style={styles.evidenceValue}>{selectedAuditCase.checkoutAt}</Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.evidenceLabel}>Tempo da visita</Text>
+                    <Text style={styles.evidenceValue}>
+                      {selectedAuditCase.durationMinutes == null ? 'Não informado' : `${selectedAuditCase.durationMinutes} min`}
+                    </Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.evidenceLabel}>Check-in x check-out</Text>
+                    <Text style={styles.evidenceValue}>
+                      {selectedAuditCase.checkinCheckoutMeters == null ? 'Sem coordenadas' : formatDistance(selectedAuditCase.checkinCheckoutMeters)}
+                    </Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.evidenceLabel}>Check-in x sede</Text>
+                    <Text style={styles.evidenceValue}>
+                      {selectedAuditCase.checkinPropertyMeters == null ? 'Sem coordenadas' : formatDistance(selectedAuditCase.checkinPropertyMeters)}
+                    </Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.evidenceLabel}>Coordenada check-in</Text>
+                    <Text style={styles.evidenceValue}>{selectedAuditCase.checkinCoordinate}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.evidenceRow}>
+                  <View style={styles.evidenceItem}>
+                    <Text style={styles.evidenceLabel}>Foto x propriedade</Text>
+                    <Text style={styles.evidenceValue}>{formatDistance(selectedAuditCase.photoDistanceMeters)}</Text>
+                  </View>
+                  <View style={styles.evidenceItem}>
+                    <Text style={styles.evidenceLabel}>IP / propriedade</Text>
+                    <Text style={styles.evidenceValue}>
+                      {selectedAuditCase.ipRegion} / {selectedAuditCase.propertyRegion}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.evidenceRow}>
+                  <View style={styles.evidenceItem}>
+                    <Text style={styles.evidenceLabel}>Deslocamento</Text>
+                    <Text style={styles.evidenceValue}>{selectedAuditCase.displacement}</Text>
+                  </View>
+                  <View style={styles.evidenceItem}>
+                    <Text style={styles.evidenceLabel}>VPN</Text>
+                    <Text style={styles.evidenceValue}>{selectedAuditCase.vpnSignal}</Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {selectedDetailTab === 'fotos' ? (
+              <View style={styles.photosBlock}>
+                <View style={styles.pythonAuditHeader}>
+                  <FontAwesome6 name="images" size={14} color={THEME.blue} />
+                  <Text style={styles.pythonAuditTitle}>Fotos registradas na visita</Text>
+                </View>
+
+                {selectedAuditCase.photos.length === 0 ? (
+                  <View style={styles.inlineState}>
+                    <FontAwesome6 name="image" size={15} color={THEME.textMuted} />
+                    <Text style={styles.stateText}>Nenhuma foto encontrada para esta visita.</Text>
+                  </View>
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoList}>
+                    {selectedAuditCase.photos.map((photo) => (
+                      <View key={photo.id} style={styles.photoCard}>
+                        {photo.uri ? (
+                          <Image source={{ uri: photo.uri }} style={styles.visitPhoto} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.photoMissing}>
+                            <FontAwesome6 name="image" size={20} color={THEME.textMuted} />
+                          </View>
+                        )}
+                        <Text style={styles.photoName} numberOfLines={1}>{photo.fileName}</Text>
+                        <Text style={styles.photoMeta}>{photo.sentAt}</Text>
+                        <Text style={styles.photoMeta}>
+                          GPS {photo.hasGps ? 'presente' : 'ausente'} • {photo.distanceMeters == null ? 'sem distância' : formatDistance(photo.distanceMeters)}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            ) : null}
+
+            {selectedDetailTab === 'indicadores' ? (
+              <View style={styles.indicatorGrid}>
+                {selectedAuditCase.indicators.map((indicator) => {
+                  const indicatorColor = getSeverityColor(indicator.severity);
+
+                  return (
+                    <View key={indicator.id} style={styles.indicatorCard}>
+                      <View style={styles.indicatorTop}>
+                        <View style={[styles.indicatorIcon, { backgroundColor: `${indicatorColor}1f` }]}> 
+                          <FontAwesome6 name={indicator.icon} size={13} color={indicatorColor} />
+                        </View>
+                        <Text style={[styles.indicatorValue, { color: indicatorColor }]}>{indicator.value}</Text>
+                      </View>
+                      <Text style={styles.indicatorLabel}>{indicator.label}</Text>
+                      <Text style={styles.indicatorDetail}>{indicator.detail}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            <View style={styles.detailActions}>
+              <View style={styles.actionSummary}>
+                <Text style={styles.actionLabel}>Ação recomendada</Text>
+                <Text style={styles.actionValue}>{getRecommendedAction(selectedAuditCase)}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.reviewButton, selectedAuditReviewed && styles.reviewButtonActive]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (selectedAuditCase) {
+                    setReviewedCaseIds((current) =>
+                      current.includes(selectedAuditCase.id)
+                        ? current.filter((id) => id !== selectedAuditCase.id)
+                        : [...current, selectedAuditCase.id]
+                    );
+                  }
+                }}>
+                <Text style={[styles.reviewButtonText, selectedAuditReviewed && styles.reviewButtonTextActive]}>
+                  {selectedAuditReviewed ? 'Revisão registrada' : 'Marcar como revisado'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : null}
 
+        <View style={styles.filterBlock}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar por propriedade, instrutor, código ou projeto"
+            placeholderTextColor={THEME.textMuted}
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            returnKeyType="search"
+          />
+
+          <View style={styles.filterChips}>
+            {[
+              { id: 'all', label: 'Todos' },
+              { id: 'alto_risco_vpn', label: 'Alto risco' },
+              { id: 'suspeita', label: 'Suspeitas' },
+              { id: 'valida', label: 'Válidas' },
+            ].map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[styles.filterPill, classificationFilter === filter.id && styles.filterPillActive]}
+                onPress={() => setClassificationFilter(filter.id as typeof classificationFilter)}
+                activeOpacity={0.85}>
+                <Text style={[styles.filterPillText, classificationFilter === filter.id && styles.filterPillTextActive]}>{filter.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.sortRow}>
+            <Text style={styles.sortLabel}>Ordenar por</Text>
+            <View style={styles.sortButtons}>
+              <TouchableOpacity
+                style={[styles.sortButton, sortBy === 'risk' && styles.sortButtonActive]}
+                onPress={() => setSortBy('risk')}
+                activeOpacity={0.85}>
+                <Text style={[styles.sortButtonText, sortBy === 'risk' && styles.sortButtonTextActive]}>Maior risco</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sortButton, sortBy === 'distance' && styles.sortButtonActive]}
+                onPress={() => setSortBy('distance')}
+                activeOpacity={0.85}>
+                <Text style={[styles.sortButtonText, sortBy === 'distance' && styles.sortButtonTextActive]}>Maior distância</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{selectedInstructor ? 'Alertas filtrados' : 'Alertas de fraude'}</Text>
-          <Text style={styles.sectionMeta}>{isLoading ? 'Carregando' : `${visibleAuditCases.length} registros`}</Text>
+          <Text style={styles.sectionMeta}>{isLoading ? 'Carregando' : `${filteredAuditCases.length} registros`}</Text>
         </View>
 
         {isLoading ? (
@@ -465,6 +621,16 @@ export default function AuditoriaScreen() {
           </TouchableOpacity>
         ) : null}
 
+        {!isLoading && !errorMessage && filteredAuditCases.length === 0 ? (
+          <View style={styles.stateCard}>
+            <View style={[styles.stateIcon, { backgroundColor: `${THEME.gold}20` }]}>
+              <FontAwesome6 name="magnifying-glass" size={16} color={THEME.leafLight} />
+            </View>
+            <Text style={styles.stateTitle}>Nenhum alerta encontrado</Text>
+            <Text style={styles.stateText}>Ajuste os filtros ou a pesquisa para ver mais alertas.</Text>
+          </View>
+        ) : null}
+
         {hasEmptyState ? (
           <View style={styles.stateCard}>
             <View style={[styles.stateIcon, { backgroundColor: `${THEME.leafLight}20` }]}>
@@ -475,7 +641,7 @@ export default function AuditoriaScreen() {
           </View>
         ) : null}
 
-        {visibleAuditCases.map((auditCase) => {
+        {filteredAuditCases.map((auditCase) => {
           const riskColor = auditCase.classification === 'alto_risco_vpn' ? THEME.error : auditCase.classification === 'suspeita' ? THEME.gold : THEME.leafLight;
 
           return (

@@ -74,7 +74,7 @@ function calculateDistanceInMeters(originLat: number, originLon: number, targetL
 
 function formatCoordinate(latitude: number | null, longitude: number | null) {
   if (latitude == null || longitude == null) {
-    return 'Coordenada nao informada';
+    return 'Coordenada não informada';
   }
 
   return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
@@ -82,12 +82,12 @@ function formatCoordinate(latitude: number | null, longitude: number | null) {
 
 function formatDateTime(value?: string | null) {
   if (!value) {
-    return 'Data nao informada';
+    return 'Data não informada';
   }
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
-    return 'Data nao informada';
+    return 'Data não informada';
   }
 
   return new Intl.DateTimeFormat('pt-BR', {
@@ -104,12 +104,12 @@ export function formatAuditDateTime(value?: string | null) {
 
 function formatTime(value?: string | null) {
   if (!value) {
-    return 'Nao informado';
+    return 'Não informado';
   }
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
-    return 'Nao informado';
+    return 'Não informado';
   }
 
   return new Intl.DateTimeFormat('pt-BR', {
@@ -140,8 +140,8 @@ function scoreValue(score?: number | null) {
 export function mapInstructorRisk(row: InstructorScoreRow): InstructorRisk {
   return {
     id: row.instrutor_id,
-    name: row.instrutor_nome ?? 'Instrutor nao informado',
-    regional: row.regional_nome ?? 'Regional nao informada',
+    name: row.instrutor_nome ?? 'Instrutor não informado',
+    regional: row.regional_nome ?? 'Regional não informada',
     totalVisits: row.total_visitas ?? 0,
     analyzedVisits: row.visitas_analisadas ?? 0,
     averageScore: Math.round(parseNumber(row.score_medio)),
@@ -182,8 +182,8 @@ export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow
     (checkinLat != null && checkinLon != null && propertyLat != null && propertyLon != null
       ? calculateDistanceInMeters(checkinLat, checkinLon, propertyLat, propertyLon)
       : null);
-  const propertyRegion = [alert.municipio_nome, alert.uf].filter(Boolean).join(', ') || 'Regiao nao informada';
-  const ipRegion = [analysis?.ip_cidade, analysis?.ip_pais].filter(Boolean).join(', ') || 'IP nao registrado';
+  const propertyRegion = [alert.municipio_nome, alert.uf].filter(Boolean).join(', ') || 'Região não informada';
+  const ipRegion = [analysis?.ip_cidade, analysis?.ip_pais].filter(Boolean).join(', ') || 'IP não registrado';
   const vpnDetected = analysis?.vpn_detectada ?? alert.vpn_detectada ?? false;
   const details = analysis?.detalhes ?? {};
   const displacementDetails =
@@ -199,14 +199,14 @@ export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow
     visitId: alert.visita_id,
     technicianId: alert.instrutor_id,
     property: alert.propriedade_nome ?? 'Propriedade sem nome',
-    technician: alert.instrutor_nome ?? 'Instrutor nao informado',
+    technician: alert.instrutor_nome ?? 'Instrutor não informado',
     visitDate: formatDateTime(alert.dt_visita ?? alert.analisado_em),
     analyzedAt: formatDateTime(alert.analisado_em),
     trackingCode: alert.codigo_rastreamento ?? `Visita #${alert.visita_id}`,
-    project: alert.projeto_nome ?? 'Projeto nao informado',
-    status: visitDetail?.status_visita ?? alert.status_visita ?? 'Status nao informado',
-    type: visitDetail?.tipo_visita ?? 'Tipo nao informado',
-    producer: producer?.nome ?? 'Produtor nao informado',
+    project: alert.projeto_nome ?? 'Projeto não informado',
+    status: visitDetail?.status_visita ?? alert.status_visita ?? 'Status não informado',
+    type: visitDetail?.tipo_visita ?? 'Tipo não informado',
+    producer: producer?.nome ?? 'Produtor não informado',
     checkinAt: formatTime(visitDetail?.dt_checkin),
     checkoutAt: formatTime(visitDetail?.dt_checkout),
     durationMinutes: visitDetail?.tempo_visita_minutos ?? null,
@@ -232,18 +232,18 @@ export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow
         value: formatDistance(Math.round(distance)),
         detail:
           analysis?.score_distancia == null
-            ? 'Distancia ainda nao pontuada pela analise antifraude.'
-            : 'Comparacao entre o GPS EXIF da foto e a coordenada oficial da propriedade.',
+            ? 'Distancia ainda não pontuada pela analise antifraude.'
+            : 'Comparação entre o GPS EXIF da foto e a coordenada oficial da propriedade.',
         icon: 'map-location-dot',
         severity: scoreSeverity(analysis?.score_distancia),
       },
       {
         id: 'ip',
-        label: 'IP/regiao',
+        label: 'IP/região',
         value: scoreValue(analysis?.score_ip_regiao),
         detail:
-          ipRegion === 'IP nao registrado'
-            ? 'A analise nao gravou cidade ou pais do IP de acesso.'
+          ipRegion === 'IP não registrado'
+            ? 'A analise não gravou cidade ou pais do IP de acesso.'
             : `IP identificado em ${ipRegion}; propriedade em ${propertyRegion}.`,
         icon: 'tower-broadcast',
         severity: scoreSeverity(analysis?.score_ip_regiao),
