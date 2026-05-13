@@ -266,6 +266,14 @@ export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow
         icon: 'shield-halved',
         severity: vpnDetected ? 'critical' : scoreSeverity(analysis?.score_vpn),
       },
+      {
+        id: 'geographic_impossibility',
+        label: 'Viagens impossíveis',
+        value: 'Verificar',
+        detail: 'Analisar se o instrutor realizou visitas em propriedades geograficamente distantes em um período curto, tornando-as impossíveis de executar.',
+        icon: 'triangle-exclamation',
+        severity: 'warning',
+      },
     ],
     photos: [],
   };
