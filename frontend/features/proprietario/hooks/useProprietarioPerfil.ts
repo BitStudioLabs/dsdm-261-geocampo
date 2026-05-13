@@ -74,7 +74,7 @@ export function useProprietarioPerfil() {
       } catch (error) {
         console.error('Erro ao carregar perfil do proprietario:', error);
         if (active) {
-          setFeedback({ type: 'error', message: 'Nao foi possivel carregar os dados do perfil agora.' });
+          setFeedback({ type: 'error', message: 'Não foi possivel carregar os dados do perfil agora.' });
         }
       } finally {
         if (active) setLoading(false);
@@ -103,7 +103,7 @@ export function useProprietarioPerfil() {
         } catch (error) {
           console.error('Erro ao atualizar perfil do proprietario ao focar:', error);
           if (active) {
-            setFeedback({ type: 'error', message: 'Nao foi possivel atualizar os dados do perfil.' });
+            setFeedback({ type: 'error', message: 'Não foi possivel atualizar os dados do perfil.' });
           }
         } finally {
           if (active) setLoading(false);
@@ -141,7 +141,7 @@ export function useProprietarioPerfil() {
       setFeedback(null);
     } catch (error) {
       console.error('Erro ao atualizar perfil do proprietario:', error);
-      setFeedback({ type: 'error', message: 'Nao foi possivel atualizar os dados agora.' });
+      setFeedback({ type: 'error', message: 'Não foi possivel atualizar os dados agora.' });
     } finally {
       setRefreshing(false);
     }
@@ -262,7 +262,7 @@ export function useProprietarioPerfil() {
       try {
         await logout();
       } catch {
-        setFeedback({ type: 'error', message: 'Nao foi possivel sair da conta agora.' });
+        setFeedback({ type: 'error', message: 'Não foi possivel sair da conta agora.' });
       }
     };
 

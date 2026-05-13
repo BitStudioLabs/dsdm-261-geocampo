@@ -182,7 +182,7 @@ export default function PerfilProprietarioScreen() {
             state.properties.map((item) => (
               <View key={item.id} style={styles.propertyCard}>
                 <Text style={styles.propertyName}>{item.nome}</Text>
-                <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio nao informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
+                <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio não informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
                 <Text style={styles.propertyInstructor}>
                   {item.instrutores.length
                     ? `Instrutor${item.instrutores.length > 1 ? 'es' : ''}: ${item.instrutores.join(', ')}`
