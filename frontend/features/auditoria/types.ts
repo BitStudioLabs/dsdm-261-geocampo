@@ -44,6 +44,12 @@ export type AuditCase = {
   photos: VisitPhoto[];
 };
 
+export type SameDayTravelCheck = {
+  value: string;
+  detail: string;
+  severity: AuditSeverity;
+};
+
 export type VisitPhoto = {
   id: string;
   uri: string | null;
@@ -99,6 +105,37 @@ export type VisitPhotoRow = {
   exif_longitude: number | string | null;
   distancia_propriedade_metros: number | string | null;
   enviada_em: string | null;
+};
+
+export type SameDayVisitRow = {
+  id: number;
+  id_instrutor: string;
+  dt_visita: string | null;
+  dt_checkin: string | null;
+  propriedades:
+    | {
+        nome: string | null;
+        latitude: number | string | null;
+        longitude: number | string | null;
+      }
+    | {
+        nome: string | null;
+        latitude: number | string | null;
+        longitude: number | string | null;
+      }[]
+    | null;
+};
+
+export type VisitPhotoMetadataRow = {
+  id_visita: number;
+  foto_url: string | null;
+  foto_path: string | null;
+  file_name: string | null;
+  has_gps: boolean | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  distancia_metros: number | string | null;
+  capturado_em: string | null;
 };
 
 export type FraudAlertRow = {

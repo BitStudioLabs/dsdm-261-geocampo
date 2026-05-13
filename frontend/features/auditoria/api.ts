@@ -1,14 +1,17 @@
 import { supabase } from '@/src/lib/supabase';
 
-import { buildAuditCase, mapInstructorRisk, mapVisitPhoto } from './helpers';
+import { buildAuditCase, evaluateSameDayTravel, mapInstructorRisk, mapVisitPhoto, mapVisitPhotoMetadata } from './helpers';
 import type {
   AuditCase,
   AuditSummary,
   FraudAlertRow,
   FraudAnalysisRow,
   InstructorScoreRow,
+  SameDayTravelCheck,
+  SameDayVisitRow,
   VisitAuditDetailRow,
   VisitPhoto,
+  VisitPhotoMetadataRow,
   VisitPhotoRow,
 } from './types';
 
@@ -24,7 +27,28 @@ const VISIT_SELECT =
 const PHOTO_SELECT =
   'id, id_visita, storage_path, url_publica, nome_arquivo, exif_tem_gps, exif_latitude, exif_longitude, distancia_propriedade_metros, enviada_em';
 
-async function fetchPhotosByVisitIds(visitIds: number[]) {
+const PHOTO_METADATA_SELECT =
+  'id_visita, foto_url, foto_path, file_name, has_gps, latitude, longitude, distancia_metros, capturado_em';
+
+const SAME_DAY_VISIT_SELECT =
+  'id, id_instrutor, dt_visita, dt_checkin, propriedades(nome, latitude, longitude)';
+
+function mergePhotosByVisitId(photoMaps: Map<number, VisitPhoto[]>[]) {
+  const merged = new Map<number, VisitPhoto[]>();
+
+  photoMaps.forEach((photoMap) => {
+    photoMap.forEach((photos, visitId) => {
+      const currentPhotos = merged.get(visitId) ?? [];
+      const knownPhotoIds = new Set(currentPhotos.map((photo) => photo.id));
+      const newPhotos = photos.filter((photo) => !knownPhotoIds.has(photo.id));
+      merged.set(visitId, [...currentPhotos, ...newPhotos]);
+    });
+  });
+
+  return merged;
+}
+
+async function fetchLegacyPhotosByVisitIds(visitIds: number[]) {
   if (visitIds.length === 0) {
     return new Map<number, VisitPhoto[]>();
   }
@@ -61,12 +85,147 @@ async function fetchPhotosByVisitIds(visitIds: number[]) {
   return photosByVisitId;
 }
 
+async function fetchMetadataPhotosByVisitIds(visitIds: number[]) {
+  if (visitIds.length === 0) {
+    return new Map<number, VisitPhoto[]>();
+  }
+
+  const photosRes = await supabase
+    .from('metadados_foto_visita')
+    .select(PHOTO_METADATA_SELECT)
+    .in('id_visita', visitIds)
+    .order('capturado_em', { ascending: true });
+
+  if (photosRes.error) throw photosRes.error;
+
+  const rows = (photosRes.data ?? []) as VisitPhotoMetadataRow[];
+  const signedUrlEntries = await Promise.all(
+    rows.map(async (row) => {
+      if (row.foto_url || !row.foto_path) {
+        return [row.foto_path ?? row.foto_url ?? `${row.id_visita}`, null] as const;
+      }
+
+      const { data } = await supabase.storage.from('evidencias-visitas').createSignedUrl(row.foto_path, 60 * 60);
+      return [row.foto_path, data?.signedUrl ?? null] as const;
+    })
+  );
+  const signedUrlByPhotoPath = new Map(signedUrlEntries);
+  const photosByVisitId = new Map<number, VisitPhoto[]>();
+
+  rows.forEach((row) => {
+    const signedUrlKey = row.foto_path ?? row.foto_url ?? `${row.id_visita}`;
+    const photo = mapVisitPhotoMetadata(row, signedUrlByPhotoPath.get(signedUrlKey));
+    const currentPhotos = photosByVisitId.get(row.id_visita) ?? [];
+    currentPhotos.push(photo);
+    photosByVisitId.set(row.id_visita, currentPhotos);
+  });
+
+  return photosByVisitId;
+}
+
+async function fetchPhotosByVisitIds(visitIds: number[]) {
+  if (visitIds.length === 0) {
+    return new Map<number, VisitPhoto[]>();
+  }
+
+  const [metadataResult, legacyResult] = await Promise.allSettled([
+    fetchMetadataPhotosByVisitIds(visitIds),
+    fetchLegacyPhotosByVisitIds(visitIds),
+  ]);
+
+  if (metadataResult.status === 'fulfilled' && legacyResult.status === 'fulfilled') {
+    return mergePhotosByVisitId([metadataResult.value, legacyResult.value]);
+  }
+
+  if (metadataResult.status === 'fulfilled') {
+    return metadataResult.value;
+  }
+
+  if (legacyResult.status === 'fulfilled') {
+    return legacyResult.value;
+  }
+
+  throw metadataResult.reason;
+}
+
+function getVisitDateRange(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const start = new Date(parsed);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    key: `${start.toISOString()}:${end.toISOString()}`,
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
+async function fetchSameDayVisitsByAlert(alertRows: FraudAlertRow[]) {
+  const sameDayVisitsByVisitId = new Map<number, SameDayVisitRow[]>();
+  const queryGroups = new Map<string, { instructorId: string; start: string; end: string; visitIds: number[] }>();
+
+  alertRows.forEach((alert) => {
+    if (!alert.instrutor_id) {
+      return;
+    }
+
+    const range = getVisitDateRange(alert.dt_visita ?? alert.analisado_em);
+    if (!range) {
+      return;
+    }
+
+    const groupKey = `${alert.instrutor_id}:${range.key}`;
+    const group = queryGroups.get(groupKey) ?? {
+      instructorId: alert.instrutor_id,
+      start: range.start,
+      end: range.end,
+      visitIds: [],
+    };
+
+    group.visitIds.push(alert.visita_id);
+    queryGroups.set(groupKey, group);
+  });
+
+  await Promise.all(
+    Array.from(queryGroups.values()).map(async (group) => {
+      const visitsRes = await supabase
+        .from('visitas')
+        .select(SAME_DAY_VISIT_SELECT)
+        .eq('id_instrutor', group.instructorId)
+        .gte('dt_visita', group.start)
+        .lt('dt_visita', group.end)
+        .is('dt_exclusao', null)
+        .order('dt_visita', { ascending: true });
+
+      if (visitsRes.error) throw visitsRes.error;
+
+      const sameDayVisits = (visitsRes.data ?? []) as SameDayVisitRow[];
+      group.visitIds.forEach((visitId) => {
+        sameDayVisitsByVisitId.set(visitId, sameDayVisits);
+      });
+    })
+  );
+
+  return sameDayVisitsByVisitId;
+}
+
 export async function fetchAuditCasesByAlerts(alertRows: FraudAlertRow[]) {
   const alertIds = alertRows.map((alert) => alert.alerta_id);
   const visitIds = alertRows.map((alert) => alert.visita_id);
   let analysesById = new Map<number, FraudAnalysisRow>();
   let visitDetailsById = new Map<number, VisitAuditDetailRow>();
   let photosByVisitId = new Map<number, VisitPhoto[]>();
+  let sameDayTravelCheckByVisitId = new Map<number, SameDayTravelCheck>();
 
   if (alertIds.length > 0) {
     const analysesRes = await supabase.from('analises_antifraude').select(ANALYSIS_SELECT).in('id', alertIds);
@@ -82,11 +241,23 @@ export async function fetchAuditCasesByAlerts(alertRows: FraudAlertRow[]) {
     if (visitsRes.error) throw visitsRes.error;
 
     visitDetailsById = new Map(((visitsRes.data ?? []) as VisitAuditDetailRow[]).map((visit) => [visit.id, visit]));
-    photosByVisitId = await fetchPhotosByVisitIds(visitIds);
+    const [photosMap, sameDayVisitsMap] = await Promise.all([
+      fetchPhotosByVisitIds(visitIds),
+      fetchSameDayVisitsByAlert(alertRows),
+    ]);
+    photosByVisitId = photosMap;
+    sameDayTravelCheckByVisitId = new Map(
+      visitIds.map((visitId) => [visitId, evaluateSameDayTravel(visitId, sameDayVisitsMap.get(visitId) ?? [])])
+    );
   }
 
   return alertRows.map((alert) => ({
-    ...buildAuditCase(alert, analysesById.get(alert.alerta_id), visitDetailsById.get(alert.visita_id)),
+    ...buildAuditCase(
+      alert,
+      analysesById.get(alert.alerta_id),
+      visitDetailsById.get(alert.visita_id),
+      sameDayTravelCheckByVisitId.get(alert.visita_id)
+    ),
     photos: photosByVisitId.get(alert.visita_id) ?? [],
   }));
 }

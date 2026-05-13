@@ -6,8 +6,11 @@ import type {
   FraudAnalysisRow,
   InstructorRisk,
   InstructorScoreRow,
+  SameDayTravelCheck,
+  SameDayVisitRow,
   VisitAuditDetailRow,
   VisitPhoto,
+  VisitPhotoMetadataRow,
   VisitPhotoRow,
 } from './types';
 
@@ -118,6 +121,22 @@ function formatTime(value?: string | null) {
   }).format(parsed);
 }
 
+function formatShortTime(value?: string | null) {
+  if (!value) {
+    return 'sem horario';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'sem horario';
+  }
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
+}
+
 function getSingleRelation<T>(value: T | T[] | null | undefined) {
   if (Array.isArray(value)) {
     return value[0] ?? null;
@@ -135,6 +154,114 @@ function scoreSeverity(score?: number | null): AuditSeverity {
 
 function scoreValue(score?: number | null) {
   return score == null ? 'Sem score' : `${score}/100`;
+}
+
+function getVisitTimestamp(row: SameDayVisitRow) {
+  const value = row.dt_checkin ?? row.dt_visita;
+  if (!value) return null;
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function getVisitCoordinate(row: SameDayVisitRow) {
+  const property = getSingleRelation(row.propriedades);
+  const latitude = parseOptionalNumber(property?.latitude);
+  const longitude = parseOptionalNumber(property?.longitude);
+
+  if (latitude == null || longitude == null) {
+    return null;
+  }
+
+  return {
+    latitude,
+    longitude,
+    name: property?.nome ?? `Visita #${row.id}`,
+  };
+}
+
+export function evaluateSameDayTravel(currentVisitId: number, sameDayVisits: SameDayVisitRow[]): SameDayTravelCheck {
+  const orderedVisits = sameDayVisits
+    .map((visit) => ({ visit, timestamp: getVisitTimestamp(visit), coordinate: getVisitCoordinate(visit) }))
+    .filter((item): item is { visit: SameDayVisitRow; timestamp: number; coordinate: { latitude: number; longitude: number; name: string } } =>
+      item.timestamp != null && item.coordinate != null
+    )
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const currentIndex = orderedVisits.findIndex((item) => item.visit.id === currentVisitId);
+
+  if (orderedVisits.length <= 1 || currentIndex < 0) {
+    return {
+      value: 'Sem comparacao',
+      detail: 'Nao ha outra visita do mesmo instrutor no mesmo dia com horario e coordenadas suficientes para comparar.',
+      severity: 'success',
+    };
+  }
+
+  const currentVisit = orderedVisits[currentIndex];
+  const neighbors = [orderedVisits[currentIndex - 1], orderedVisits[currentIndex + 1]].filter(Boolean);
+  const strongestCheck = neighbors
+    .map((neighbor) => {
+      const distanceMeters = calculateDistanceInMeters(
+        currentVisit.coordinate.latitude,
+        currentVisit.coordinate.longitude,
+        neighbor.coordinate.latitude,
+        neighbor.coordinate.longitude
+      );
+      const minutesBetween = Math.abs(currentVisit.timestamp - neighbor.timestamp) / 60000;
+      const speedKmh = minutesBetween > 0 ? (distanceMeters / 1000) / (minutesBetween / 60) : Number.POSITIVE_INFINITY;
+
+      return {
+        neighbor,
+        distanceMeters,
+        minutesBetween,
+        speedKmh,
+      };
+    })
+    .sort((a, b) => b.speedKmh - a.speedKmh)[0];
+
+  if (!strongestCheck) {
+    return {
+      value: 'Sem comparacao',
+      detail: 'Nao ha visita anterior ou posterior no mesmo dia para comparar o deslocamento.',
+      severity: 'success',
+    };
+  }
+
+  const roundedSpeed = Number.isFinite(strongestCheck.speedKmh) ? Math.round(strongestCheck.speedKmh) : null;
+  const roundedMinutes = Math.max(1, Math.round(strongestCheck.minutesBetween));
+  const neighborName = strongestCheck.neighbor.coordinate.name;
+  const neighborTime = formatShortTime(strongestCheck.neighbor.visit.dt_checkin ?? strongestCheck.neighbor.visit.dt_visita);
+  const distanceText = formatDistance(strongestCheck.distanceMeters);
+
+  if (roundedSpeed == null || strongestCheck.minutesBetween <= 0) {
+    return {
+      value: 'Critico',
+      detail: `Outra visita do mesmo instrutor aparece no mesmo horario em ${neighborName}, a ${distanceText}.`,
+      severity: 'critical',
+    };
+  }
+
+  if (roundedSpeed > 120) {
+    return {
+      value: `${roundedSpeed} km/h`,
+      detail: `No mesmo dia, ha outra visita em ${neighborName} as ${neighborTime}. O deslocamento exigiria ${distanceText} em ${roundedMinutes} min.`,
+      severity: 'critical',
+    };
+  }
+
+  if (roundedSpeed > 80) {
+    return {
+      value: `${roundedSpeed} km/h`,
+      detail: `No mesmo dia, ha outra visita em ${neighborName} as ${neighborTime}. O deslocamento e possivel, mas exige verificacao.`,
+      severity: 'warning',
+    };
+  }
+
+  return {
+    value: `${roundedSpeed} km/h`,
+    detail: `Comparado com outra visita do mesmo dia em ${neighborName} as ${neighborTime}; deslocamento estimado de ${distanceText} em ${roundedMinutes} min.`,
+    severity: 'success',
+  };
 }
 
 export function mapInstructorRisk(row: InstructorScoreRow): InstructorRisk {
@@ -163,7 +290,12 @@ export function getInstructorRiskColor(instructor: InstructorRisk) {
   return THEME.leafLight;
 }
 
-export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow, visitDetail?: VisitAuditDetailRow): AuditCase {
+export function buildAuditCase(
+  alert: FraudAlertRow,
+  analysis?: FraudAnalysisRow,
+  visitDetail?: VisitAuditDetailRow,
+  sameDayTravelCheck?: SameDayTravelCheck
+): AuditCase {
   const distance = parseNumber(analysis?.distancia_calculada_metros ?? alert.distancia_calculada_metros);
   const property = getSingleRelation(visitDetail?.propriedades);
   const producer = getSingleRelation(visitDetail?.produtores);
@@ -269,10 +401,10 @@ export function buildAuditCase(alert: FraudAlertRow, analysis?: FraudAnalysisRow
       {
         id: 'geographic_impossibility',
         label: 'Viagens impossíveis',
-        value: 'Verificar',
-        detail: 'Analisar se o instrutor realizou visitas em propriedades geograficamente distantes em um período curto, tornando-as impossíveis de executar.',
+        value: sameDayTravelCheck?.value ?? 'Sem comparacao',
+        detail: sameDayTravelCheck?.detail ?? 'Comparacao limitada as visitas do mesmo instrutor realizadas no mesmo dia.',
         icon: 'triangle-exclamation',
-        severity: 'warning',
+        severity: sameDayTravelCheck?.severity ?? 'success',
       },
     ],
     photos: [],
@@ -289,5 +421,20 @@ export function mapVisitPhoto(row: VisitPhotoRow, signedUrl?: string | null): Vi
     distanceMeters: parseOptionalNumber(row.distancia_propriedade_metros),
     latitude: row.exif_latitude,
     longitude: row.exif_longitude,
+  };
+}
+
+export function mapVisitPhotoMetadata(row: VisitPhotoMetadataRow, signedUrl?: string | null): VisitPhoto {
+  const fallbackId = [row.id_visita, row.foto_path, row.foto_url, row.file_name].filter(Boolean).join(':');
+
+  return {
+    id: fallbackId || `foto-${row.id_visita}`,
+    uri: row.foto_url || signedUrl || null,
+    fileName: row.file_name ?? 'Foto da visita',
+    sentAt: formatDateTime(row.capturado_em),
+    hasGps: row.has_gps ?? false,
+    distanceMeters: parseOptionalNumber(row.distancia_metros),
+    latitude: row.latitude,
+    longitude: row.longitude,
   };
 }
