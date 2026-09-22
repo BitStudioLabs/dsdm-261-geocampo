@@ -111,8 +111,8 @@ export interface LoadedPropertyRow {
 }
 
 export type CadastroPropriedadeFeedback = {
-  type: 'ok' | 'err';
-  msg: string;
+  type: 'success' | 'error';
+  message: string;
 } | null;
 
 export const PROP0: PropForm = {

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -12,7 +10,7 @@ import {
   updateInstructorProfile,
   uploadInstructorProfilePhoto,
 } from '@/features/instrutor/api/profile';
-import type { ProfileStats } from '@/features/instrutor/types/profile';
+import type { InstructorProfileFeedback, ProfileStats } from '@/features/instrutor/types/profile';
 import { extractAvatarPath } from '@/features/instrutor/utils/dashboardAvatar';
 import { getPhotoMetadataErrorMessage } from '@/features/instrutor/utils/photoMetadata';
 import { buildDisplayName, buildPreferencesCopy, buildRegionLabel, buildSummaryCards } from '@/features/instrutor/utils/profileFormatting';
@@ -28,6 +26,7 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarStoragePath, setAvatarStoragePath] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<InstructorProfileFeedback>(null);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [stats, setStats] = useState<ProfileStats>({
@@ -54,6 +53,18 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
   }, [profile?.id, user?.id]);
 
   useEffect(() => {
+    if (!feedback) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setFeedback(null);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [feedback]);
+
+  useEffect(() => {
     let mounted = true;
 
     async function run() {
@@ -62,6 +73,9 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
         await loadStats();
       } catch (error) {
         console.error('Erro ao carregar perfil do instrutor:', error);
+        if (mounted) {
+          setFeedback({ type: 'error', message: 'Nao foi possivel carregar os dados do perfil agora.' });
+        }
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -156,8 +170,10 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
     setRefreshing(true);
     try {
       await Promise.all([loadStats(), refreshProfile()]);
+      setFeedback(null);
     } catch (error) {
       console.error('Erro ao atualizar perfil do instrutor:', error);
+      setFeedback({ type: 'error', message: 'Nao foi possivel atualizar os dados agora.' });
     } finally {
       setRefreshing(false);
     }
@@ -166,9 +182,9 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
   const handleLogout = useCallback(async () => {
     try {
       await logout();
-      router.replace('/login');
     } catch (error) {
       console.error('Erro ao sair da conta:', error);
+      setFeedback({ type: 'error', message: 'Nao foi possivel sair da conta agora.' });
     }
   }, [logout]);
 
@@ -186,7 +202,7 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
 
   const handleViewPhoto = useCallback(() => {
     if (!avatarUrl) {
-      Alert.alert('Sem foto', 'Você ainda não adicionou uma foto de perfil.');
+      setFeedback({ type: 'error', message: 'Voce ainda nao adicionou uma foto de perfil.' });
       return;
     }
 
@@ -198,7 +214,7 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
     const currentUserId = profile?.id ?? user?.id;
 
     if (!currentUserId) {
-      Alert.alert('Perfil indisponível', 'Não foi possível identificar o usuário logado.');
+      setFeedback({ type: 'error', message: 'Nao foi possivel identificar o usuario logado.' });
       return;
     }
 
@@ -206,7 +222,7 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permissão necessária', 'Permita acesso à galeria para alterar a foto de perfil.');
+      setFeedback({ type: 'error', message: 'Permita acesso a galeria para alterar a foto de perfil.' });
       return;
     }
 
@@ -223,6 +239,7 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
 
     try {
       setIsUploadingPhoto(true);
+      setFeedback(null);
       const uploadResult = await uploadInstructorProfilePhoto({
         currentUserId,
         asset: result.assets[0],
@@ -232,10 +249,10 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
       setAvatarUrl(uploadResult.avatarUrl);
 
       await refreshProfile();
-      Alert.alert('Foto atualizada', 'A foto de perfil foi salva com sucesso.');
+      setFeedback({ type: 'success', message: 'A foto de perfil foi salva com sucesso.' });
     } catch (error) {
       console.error('Erro ao enviar foto do instrutor:', error);
-      Alert.alert('Erro ao enviar', getPhotoMetadataErrorMessage(error));
+      setFeedback({ type: 'error', message: getPhotoMetadataErrorMessage(error) });
       setAvatarStoragePath(profile?.fotoUrl ? extractAvatarPath(profile.fotoUrl) : null);
     } finally {
       setIsUploadingPhoto(false);
@@ -262,17 +279,18 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
     const trimmedPhone = editPhone.trim();
 
     if (!currentUserId) {
-      Alert.alert('Perfil indisponível', 'Não foi possível identificar o usuário logado.');
+      setFeedback({ type: 'error', message: 'Nao foi possivel identificar o usuario logado.' });
       return;
     }
 
     if (!trimmedName) {
-      Alert.alert('Nome obrigatório', 'Informe o nome do instrutor para salvar o perfil.');
+      setFeedback({ type: 'error', message: 'Informe o nome do instrutor para salvar o perfil.' });
       return;
     }
 
     try {
       setIsSaving(true);
+      setFeedback(null);
       await updateInstructorProfile({
         currentUserId,
         nomeCompleto: trimmedName,
@@ -281,10 +299,10 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
 
       await refreshProfile();
       setEditVisible(false);
-      Alert.alert('Perfil atualizado', 'As informações do instrutor foram salvas com sucesso.');
+      setFeedback({ type: 'success', message: 'As informacoes do instrutor foram salvas com sucesso.' });
     } catch (error) {
       console.error('Erro ao salvar perfil do instrutor:', error);
-      Alert.alert('Erro ao salvar', getPhotoMetadataErrorMessage(error));
+      setFeedback({ type: 'error', message: getPhotoMetadataErrorMessage(error) });
     } finally {
       setIsSaving(false);
     }
@@ -332,6 +350,7 @@ export function useInstructorProfile(primaryColor: string, yellowColor: string) 
     editName,
     editPhone,
     editVisible,
+    feedback,
     handleLogout,
     handlePickPhoto,
     handleRefresh,

@@ -20,3 +20,8 @@ export type ProfilePreferenceItem = {
   subtitle: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
+
+export type InstructorProfileFeedback = {
+  type: 'success' | 'error';
+  message: string;
+} | null;

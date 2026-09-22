@@ -165,6 +165,7 @@ export const styles = StyleSheet.create({
   optionCopy: { flex: 1 },
   optionTitle: { color: THEME.white, fontSize: 14, fontWeight: '700', marginBottom: 2 },
   optionMeta: { color: THEME.muted, fontSize: 12, lineHeight: 17 },
+  selectedInstructorScore: { color: THEME.white, fontSize: 13, fontWeight: '700', marginVertical: 10 },
   propertyCard: {
     flexDirection: 'row',
     alignItems: 'center',

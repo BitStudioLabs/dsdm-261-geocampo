@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { InfoRow } from '@/features/proprietario/components/InfoRow';
-import { ProprietarioStatCard } from '@/features/proprietario/components/ProprietarioStatCard';
 import { useProprietarioPerfil } from '@/features/proprietario/hooks/useProprietarioPerfil';
 import { PROPRIETARIO_THEME as THEME } from '@/features/proprietario/theme';
 import { formatArea, statusLabel } from '@/features/proprietario/utils/formatting';
@@ -34,6 +34,7 @@ export default function PerfilProprietarioScreen() {
     editName,
     editPhone,
     editVisible,
+    feedback,
     handleLogout,
     handleRefresh,
     loading,
@@ -64,6 +65,7 @@ export default function PerfilProprietarioScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.page} />
+      <FeedbackPickup feedback={feedback} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={THEME.primary} />}
@@ -109,11 +111,55 @@ export default function PerfilProprietarioScreen() {
           </View>
         </View>
 
-        <View style={styles.grid}>
-          <ProprietarioStatCard label="Fazendas" value={loading ? '...' : state.properties.length} />
-          <ProprietarioStatCard label="Ativas" value={loading ? '...' : activeProperties} />
-          <ProprietarioStatCard label="Area total (ha)" value={loading ? '...' : formatArea(totalArea)} />
-          <ProprietarioStatCard label="Visitas" value={loading ? '...' : state.visitsCount} />
+        <View style={styles.profileStatsPanel}>
+          <View style={styles.profileStatsHeader}>
+            <Text style={styles.profileStatsTitle}>Indicadores do cadastro</Text>
+            <View style={styles.profileStatsIcon}>
+              <Ionicons name="stats-chart-outline" size={15} color={THEME.primary} />
+            </View>
+          </View>
+
+          <View style={styles.profileStatsRows}>
+            <View style={styles.profileStatItem}>
+              <View style={styles.profileStatMarker}>
+                <Ionicons name="business-outline" size={15} color={THEME.primary} />
+              </View>
+              <View style={styles.profileStatCopy}>
+                <Text style={styles.profileStatLabel}>Fazendas</Text>
+                <Text style={styles.profileStatValue}>{loading ? '...' : state.properties.length}</Text>
+              </View>
+            </View>
+
+            <View style={styles.profileStatItem}>
+              <View style={styles.profileStatMarker}>
+                <Ionicons name="leaf-outline" size={15} color={THEME.primary} />
+              </View>
+              <View style={styles.profileStatCopy}>
+                <Text style={styles.profileStatLabel}>Ativas</Text>
+                <Text style={styles.profileStatValue}>{loading ? '...' : activeProperties}</Text>
+              </View>
+            </View>
+
+            <View style={styles.profileStatItemWide}>
+              <View style={styles.profileStatMarker}>
+                <Ionicons name="map-outline" size={15} color={THEME.primary} />
+              </View>
+              <View style={styles.profileStatCopy}>
+                <Text style={styles.profileStatLabel}>Area total</Text>
+                <Text style={styles.profileStatValue}>{loading ? '...' : `${formatArea(totalArea)} ha`}</Text>
+              </View>
+            </View>
+
+            <View style={styles.profileStatItem}>
+              <View style={styles.profileStatMarker}>
+                <Ionicons name="clipboard-outline" size={15} color={THEME.primary} />
+              </View>
+              <View style={styles.profileStatCopy}>
+                <Text style={styles.profileStatLabel}>Visitas</Text>
+                <Text style={styles.profileStatValue}>{loading ? '...' : state.visitsCount}</Text>
+              </View>
+            </View>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -136,7 +182,7 @@ export default function PerfilProprietarioScreen() {
             state.properties.map((item) => (
               <View key={item.id} style={styles.propertyCard}>
                 <Text style={styles.propertyName}>{item.nome}</Text>
-                <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio nao informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
+                <Text style={styles.propertyMeta}>{item.municipio_nome ?? 'Municipio não informado'}{item.uf ? ` - ${item.uf}` : ''}</Text>
                 <Text style={styles.propertyInstructor}>
                   {item.instrutores.length
                     ? `Instrutor${item.instrutores.length > 1 ? 'es' : ''}: ${item.instrutores.join(', ')}`
@@ -257,7 +303,62 @@ const styles = StyleSheet.create({
   profileActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   profileActionButton: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: THEME.lineStrong, backgroundColor: THEME.panel, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 10 },
   profileActionText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 18, marginTop: 16, marginBottom: 16 },
+  profileStatsPanel: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    marginBottom: 16,
+    borderRadius: 22,
+    padding: 14,
+    backgroundColor: THEME.panel,
+    borderWidth: 1,
+    borderColor: THEME.line,
+    shadowColor: '#030804',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  profileStatsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  profileStatsTitle: { color: THEME.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
+  profileStatsIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.primarySoft,
+    borderWidth: 1,
+    borderColor: THEME.lineStrong,
+  },
+  profileStatsRows: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  profileStatItem: {
+    flex: 1,
+    minWidth: '46%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: THEME.panelStrong,
+    borderWidth: 1,
+    borderColor: THEME.line,
+  },
+  profileStatItemWide: {
+    flex: 1.35,
+    minWidth: '52%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: 'rgba(89, 210, 124, 0.1)',
+    borderWidth: 1,
+    borderColor: THEME.lineStrong,
+  },
+  profileStatMarker: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primarySoft },
+  profileStatCopy: { flex: 1 },
+  profileStatLabel: { color: THEME.textMuted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 2 },
+  profileStatValue: { color: '#fff', fontSize: 18, fontWeight: '900' },
   section: { backgroundColor: THEME.panel, borderRadius: 22, padding: 16, marginBottom: 14, marginHorizontal: 18, borderWidth: 1, borderColor: THEME.line, shadowColor: '#030804', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 4 },
   sectionTitle: { color: THEME.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' },
   empty: { alignItems: 'center', borderRadius: 18, borderWidth: 1, borderStyle: 'dashed', borderColor: THEME.lineStrong, paddingHorizontal: 16, paddingVertical: 20, gap: 6, backgroundColor: THEME.panelStrong },

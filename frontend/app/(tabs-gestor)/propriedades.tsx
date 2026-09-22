@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import PropertyMap from '@/features/propriedades/components/PropertyMap';
 import { PAGE_SIZE_OPTIONS, THEME } from '@/features/propriedades/constants';
 import {
@@ -180,7 +181,7 @@ export default function PropriedadesScreen() {
   const [ownerOptions, setOwnerOptions] = useState<ProprietarioOption[]>([]);
   const [ownerSearchLoading, setOwnerSearchLoading] = useState(false);
   const [savingOwner, setSavingOwner] = useState(false);
-  const [ownerFeedback, setOwnerFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+  const [ownerFeedback, setOwnerFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [ownerErrors, setOwnerErrors] = useState<Partial<Record<keyof OwnerForm, string>>>({});
   const [ownerForm, setOwnerForm] = useState<OwnerForm>({
     nome: '',
@@ -351,6 +352,18 @@ export default function PropriedadesScreen() {
   useEffect(() => {
     setPage(1);
   }, [filter, query, pageSize]);
+
+  useEffect(() => {
+    if (!ownerFeedback) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setOwnerFeedback(null);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [ownerFeedback]);
 
   const filteredProperties = useMemo(() => properties, [properties]);
 
@@ -659,10 +672,10 @@ export default function PropriedadesScreen() {
 
       await Promise.all([loadProperties(), loadMapDataset()]);
       setSelectedId(selectedProperty.id);
-      setOwnerFeedback({ type: 'ok', msg: 'Proprietario vinculado com sucesso a esta propriedade.' });
+      setOwnerFeedback({ type: 'success', message: 'Proprietario vinculado com sucesso a esta propriedade.' });
       setOwnerFormOpen(false);
     } catch (error: any) {
-      setOwnerFeedback({ type: 'err', msg: error?.message ?? 'Não foi possivel vincular o proprietario.' });
+      setOwnerFeedback({ type: 'error', message: error?.message ?? 'Não foi possivel vincular o proprietario.' });
     } finally {
       setSavingOwner(false);
     }
@@ -674,6 +687,7 @@ export default function PropriedadesScreen() {
 
   return (
     <View style={styles.root}>
+      <FeedbackPickup feedback={ownerFeedback} />
       <View style={[styles.header, { paddingTop: insets.top + 18 }]}>
         <TouchableOpacity style={styles.headerButton} onPress={() => router.back()} activeOpacity={0.85}>
           <FontAwesome6 name="arrow-left" size={14} color={THEME.white} />
@@ -920,12 +934,6 @@ export default function PropriedadesScreen() {
                           />
                         </View>
                         {ownerErrors.senha ? <Text style={styles.inlineErrorText}>{ownerErrors.senha}</Text> : null}
-                      </View>
-                    ) : null}
-
-                    {ownerFeedback ? (
-                      <View style={[styles.ownerFeedback, ownerFeedback.type === 'ok' ? styles.ownerFeedbackOk : styles.ownerFeedbackErr]}>
-                        <Text style={styles.ownerFeedbackText}>{ownerFeedback.msg}</Text>
                       </View>
                     ) : null}
 

@@ -97,3 +97,8 @@ export type CreateVisitResult = {
   queuedOffline: boolean;
   localId?: string | null;
 };
+
+export type InstructorVisitsFeedback = {
+  type: 'success' | 'error';
+  message: string;
+} | null;

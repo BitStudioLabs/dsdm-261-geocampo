@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { ATRIBUICOES_PAGE_SIZE_OPTIONS, ATRIBUICOES_TECNICO_THEME as THEME } from '@/features/atribuicoes-tecnico/constants';
 import { styles } from '@/features/atribuicoes-tecnico/styles';
 import type { AtribuicaoRow, AtribuicoesFeedback, InstrutorOption, PropriedadeOption } from '@/features/atribuicoes-tecnico/types';
@@ -106,7 +107,30 @@ export default function AtribuicoesTecnicoScreen() {
     }
 
     const loadedInstrutores = (instrutoresRes.data ?? []) as InstrutorOption[];
-    setInstrutores(loadedInstrutores);
+    const instrutorIds = loadedInstrutores.map((item) => item.id);
+
+    const scoreRes = await supabase
+      .from('vw_score_instrutores')
+      .select('instrutor_id, score_medio')
+      .in('instrutor_id', instrutorIds);
+
+    if (scoreRes.error) {
+      throw scoreRes.error;
+    }
+
+    const scoreById = new Map<string, number | null>(
+      ((scoreRes.data ?? []) as Array<{ instrutor_id: string; score_medio: number | string | null }>).map((row) => [
+        row.instrutor_id,
+        row.score_medio == null ? null : Number(row.score_medio),
+      ])
+    );
+
+    const loadedInstrutoresWithScore = loadedInstrutores.map((instrutor) => ({
+      ...instrutor,
+      score_medio: scoreById.get(instrutor.id) ?? null,
+    }));
+
+    setInstrutores(loadedInstrutoresWithScore);
     setPropriedades((propriedadesRes.data ?? []) as PropriedadeOption[]);
 
     const initialInstructorId =
@@ -367,6 +391,7 @@ export default function AtribuicoesTecnicoScreen() {
 
   return (
     <View style={styles.root}>
+      <FeedbackPickup feedback={feedback} />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -391,38 +416,10 @@ export default function AtribuicoesTecnicoScreen() {
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Tecnico de Campo</Text>
           {selectedInstructor ? (
-            <View style={styles.currentLinksCard}>
-              <View style={styles.currentLinksHeader}>
-                <Text style={styles.currentLinksTitle}>Vinculos atuais</Text>
-                <Text style={styles.currentLinksMeta}>
-                  {linkedProperties.length === 0 ? 'Nenhuma fazenda vinculada' : `${linkedProperties.length} vinculada(s)`}
-                </Text>
-              </View>
-
-              {linkedProperties.length === 0 ? (
-                <Text style={styles.currentLinksEmpty}>Este tecnico ainda não possui fazendas vinculadas.</Text>
-              ) : null}
-
-              {linkedProperties.map((property) => (
-                <View key={`linked-${property.id}`} style={styles.linkedPropertyRow}>
-                  <View style={styles.linkedPropertyCopy}>
-                    <Text style={styles.linkedPropertyTitle}>{property.nome ?? 'Propriedade sem nome'}</Text>
-                    <Text style={styles.linkedPropertyMeta}>
-                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao não informada'}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.unlinkButton}
-                    activeOpacity={0.88}
-                    onPress={() => toggleProperty(property.id)}>
-                    <FontAwesome6 name="link-slash" size={11} color={THEME.white} />
-                    <Text style={styles.unlinkButtonText}>Retirar</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
+            <Text style={styles.selectedInstructorScore}>
+              Score do tecnico: {selectedInstructor.score_medio != null ? `${Math.round(selectedInstructor.score_medio)}/100` : 'Sem score disponível'}
+            </Text>
           ) : null}
-
           <View style={styles.searchBox}>
             <FontAwesome6 name="magnifying-glass" size={14} color={THEME.muted} />
             <TextInput
@@ -455,6 +452,7 @@ export default function AtribuicoesTecnicoScreen() {
 
           {paginatedInstrutores.map((instrutor) => {
             const selected = instrutor.id === selectedInstructorId;
+            const scoreLabel = instrutor.score_medio != null ? `${Math.round(instrutor.score_medio)}/100` : 'Sem score';
             return (
               <TouchableOpacity
                 key={instrutor.id}
@@ -464,6 +462,7 @@ export default function AtribuicoesTecnicoScreen() {
                 <View style={styles.optionCopy}>
                   <Text style={styles.optionTitle}>{instrutor.nome_completo ?? 'Tecnico sem nome'}</Text>
                   <Text style={styles.optionMeta}>{instrutor.email ?? 'E-mail não informado'}</Text>
+                  <Text style={styles.optionMeta}>Score: {scoreLabel}</Text>
                 </View>
                 <View style={[styles.statusBadge, instrutor.ativo ? styles.statusActive : styles.statusInactive]}>
                   <Text style={styles.statusText}>{instrutor.ativo ? 'Ativo' : 'Inativo'}</Text>
@@ -515,6 +514,39 @@ export default function AtribuicoesTecnicoScreen() {
                 activeOpacity={0.85}>
                 <Text style={[styles.pageNavText, instrutoresPage === instrutoresTotalPages && styles.pageNavTextDisabled]}>Ultima</Text>
               </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {selectedInstructor ? (
+            <View style={styles.currentLinksCard}>
+              <View style={styles.currentLinksHeader}>
+                <Text style={styles.currentLinksTitle}>Vinculos atuais</Text>
+                <Text style={styles.currentLinksMeta}>
+                  {linkedProperties.length === 0 ? 'Nenhuma fazenda vinculada' : `${linkedProperties.length} vinculada(s)`}
+                </Text>
+              </View>
+
+              {linkedProperties.length === 0 ? (
+                <Text style={styles.currentLinksEmpty}>Este tecnico ainda não possui fazendas vinculadas.</Text>
+              ) : null}
+
+              {linkedProperties.map((property) => (
+                <View key={`linked-${property.id}`} style={styles.linkedPropertyRow}>
+                  <View style={styles.linkedPropertyCopy}>
+                    <Text style={styles.linkedPropertyTitle}>{property.nome ?? 'Propriedade sem nome'}</Text>
+                    <Text style={styles.linkedPropertyMeta}>
+                      {[property.municipio_nome, property.uf].filter(Boolean).join(' - ') || 'Localizacao não informada'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.unlinkButton}
+                    activeOpacity={0.88}
+                    onPress={() => toggleProperty(property.id)}>
+                    <FontAwesome6 name="link-slash" size={11} color={THEME.white} />
+                    <Text style={styles.unlinkButtonText}>Retirar</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
           ) : null}
         </View>
@@ -636,12 +668,6 @@ export default function AtribuicoesTecnicoScreen() {
                 activeOpacity={0.85}>
                 <Text style={[styles.pageNavText, propriedadesPage === propriedadesTotalPages && styles.pageNavTextDisabled]}>Ultima</Text>
               </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {feedback ? (
-            <View style={[styles.feedbackBox, feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>
-              <Text style={styles.feedbackText}>{feedback.message}</Text>
             </View>
           ) : null}
 

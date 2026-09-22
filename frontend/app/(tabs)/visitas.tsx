@@ -23,6 +23,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { FeedbackPickup } from '@/features/cadastro-usuario/components/FeedbackPickup';
 import { EmptyStateCard } from '@/features/instrutor/components/EmptyStateCard';
 import { FeedbackCard } from '@/features/instrutor/components/FeedbackCard';
 import { LoadingState } from '@/features/instrutor/components/LoadingState';
@@ -163,6 +164,7 @@ function getHistoryStatusStyle(status: VisitHistoryItem['status']) {
 export default function VisitasScreen() {
   const {
     errorMessage,
+    feedback,
     handleClearSelectedPhoto,
     handleCreateVisit,
     handlePickImage,
@@ -294,6 +296,7 @@ export default function VisitasScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.skyTop} />
+      <FeedbackPickup feedback={feedback} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

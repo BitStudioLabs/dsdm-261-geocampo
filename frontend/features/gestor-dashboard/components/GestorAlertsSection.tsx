@@ -1,4 +1,5 @@
 import { FontAwesome6 } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { Text, TouchableOpacity, View } from 'react-native';
 
 import { THEME } from '../constants';
@@ -12,11 +13,13 @@ interface GestorAlertsSectionProps {
 }
 
 export function GestorAlertsSection({ alerts, alertCardWidth, isLoading }: GestorAlertsSectionProps) {
+  const goToAuditoria = () => router.push('/(tabs-gestor)/auditoria' as any);
+
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Alertas Recentes</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={goToAuditoria} activeOpacity={0.85}>
           <Text style={styles.seeAll}>Ver todos</Text>
         </TouchableOpacity>
       </View>
@@ -30,7 +33,7 @@ export function GestorAlertsSection({ alerts, alertCardWidth, isLoading }: Gesto
 
       <View style={styles.alertsGrid}>
         {alerts.map((alert) => (
-          <TouchableOpacity key={alert.id} style={[styles.alertCard, { width: alertCardWidth }]}>
+          <TouchableOpacity key={alert.id} style={[styles.alertCard, { width: alertCardWidth }]} onPress={goToAuditoria} activeOpacity={0.9}>
             <View style={styles.alertCardTop}>
               <View style={styles.alertTopLeft}>
                 <View

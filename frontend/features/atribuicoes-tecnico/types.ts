@@ -3,6 +3,7 @@ export type InstrutorOption = {
   nome_completo: string | null;
   email: string | null;
   ativo: boolean;
+  score_medio?: number | null;
 };
 
 export type PropriedadeOption = {
